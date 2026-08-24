@@ -11,7 +11,13 @@ import '../models/habit.dart';
 /// Bump this whenever a stored shape changes and add a branch to
 /// [decodeHabits]; readers must keep understanding older payloads or an update
 /// would silently wipe somebody's history.
-const int kSchemaVersion = 1;
+///
+/// - v1: the original habit shape.
+/// - v2: adds `anchorId` (habit stacking) and `skipped` (planned days off).
+///   Both are additive and absent-means-default, so v1 payloads decode under v2
+///   with no migration branch — [Habit.fromJson] already treats a missing
+///   `skipped` as no days off and a missing `anchorId` as unstacked.
+const int kSchemaVersion = 2;
 
 /// Persistence boundary for everything the app remembers.
 ///

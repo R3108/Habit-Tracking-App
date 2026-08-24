@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/habit.dart';
+import '../models/momentum.dart';
 import '../state/habit_store.dart';
 import '../state/settings_store.dart';
 import '../widgets/day_selector.dart';
+import '../widgets/focus_card.dart';
 import '../widgets/habit_card.dart';
 import '../widgets/habit_editor_sheet.dart';
 import 'habit_detail_screen.dart';
@@ -43,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
       targetPerDay: draft.targetPerDay,
       reminder: draft.reminder,
       note: draft.note,
+      anchorId: draft.anchorId,
     );
   }
 
@@ -61,6 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
         note: draft.note,
         reminder: draft.reminder,
         clearReminder: draft.reminder == null,
+        anchorId: draft.anchorId,
+        clearAnchor: draft.anchorId == null,
       ),
     );
   }
@@ -79,6 +84,20 @@ class _HomeScreenState extends State<HomeScreen> {
       'Archived "${habit.title}"',
       undoLabel: 'Undo',
       onUndo: () => store.setArchived(habit.id, false),
+    );
+  }
+
+  /// Marks the selected day as planned time off, with an undo.
+  ///
+  /// Phrased as "day off" rather than "skip" everywhere the user can see it:
+  /// skipping sounds like getting away with something, and the whole feature
+  /// exists so that a deliberate rest doesn't feel like a failure.
+  void _takeDayOff(HabitStore store, Habit habit) {
+    store.setSkipped(habit.id, _selectedDay, true);
+    _notify(
+      '"${habit.title}" — day off. Streak protected.',
+      undoLabel: 'Undo',
+      onUndo: () => store.setSkipped(habit.id, _selectedDay, false),
     );
   }
 
@@ -115,6 +134,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final resting = store.habits
         .where((h) => !due.contains(h) && !_selectedDay.isBefore(h.createdAt))
         .toList();
+
+    // Only ever computed for today. Momentum is a statement about now, and
+    // showing "at risk" while the user browses last Tuesday would be nonsense.
+    final isToday = _selectedDay == dateOnly(DateTime.now());
+    final focus = isToday ? focusList(store.habits) : const <HabitMomentum>[];
+
+    // Summarising a list the user can already see whole is just the list
+    // printed twice, and every focus row repeats a card a few pixels below it.
+    // On a short list the card has to earn its place: a streak actually on the
+    // line today is worth the repetition, a habit merely drifting is not.
+    final showFocus =
+        focus.isNotEmpty &&
+        (store.habits.length >= 4 ||
+            focus.any((m) => m.risk == HabitRisk.atRisk));
 
     return Scaffold(
       // Hidden while ordering: it would sit on top of the drag handle of the
@@ -172,6 +205,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       completedCountFor: store.completedOn,
                       dueCountFor: store.dueCountOn,
                     ),
+                    if (showFocus) ...[
+                      const SizedBox(height: 20),
+                      FocusCard(
+                        entries: focus,
+                        habitFor: store.byId,
+                        onOpen: _openHabit,
+                      ),
+                    ],
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -205,16 +246,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 itemCount: due.length,
                 itemBuilder: (context, index) {
                   final habit = due[index];
+                  final anchor = store.anchorOf(habit);
                   return HabitCard(
                     key: ValueKey(habit.id),
                     habit: habit,
                     day: _selectedDay,
+                    anchor: anchor,
+                    // A stacked habit's cue has fired once its anchor is done,
+                    // which is the moment the card is worth highlighting.
+                    isCued:
+                        anchor != null && anchor.isCompletedOn(_selectedDay),
                     onToggle: () => store.toggle(habit.id, _selectedDay),
                     onIncrement: () => store.increment(habit.id, _selectedDay),
                     onOpen: () => _openHabit(habit),
                     onEdit: () => _editHabit(habit),
                     onArchive: () => _archiveHabit(store, habit),
                     onDelete: () => _deleteHabit(store, habit),
+                    onDayOff: () => _takeDayOff(store, habit),
                   );
                 },
               ),
@@ -229,6 +277,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     habits: resting,
                     day: _selectedDay,
                     onOpen: _openHabit,
+                    onCancelDayOff: (habit) =>
+                        store.setSkipped(habit.id, _selectedDay, false),
                     weekStartsOn: settings.weekStartsOn,
                   ),
                 ),
@@ -463,12 +513,14 @@ class _RestingSection extends StatefulWidget {
     required this.habits,
     required this.day,
     required this.onOpen,
+    required this.onCancelDayOff,
     required this.weekStartsOn,
   });
 
   final List<Habit> habits;
   final DateTime day;
   final ValueChanged<Habit> onOpen;
+  final ValueChanged<Habit> onCancelDayOff;
   final int weekStartsOn;
 
   @override
@@ -481,6 +533,15 @@ class _RestingSectionState extends State<_RestingSection> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final offCount = widget.habits
+        .where((h) => h.isSkippedOn(widget.day))
+        .length;
+
+    // The header names the day-off count when there is one, because a habit
+    // vanishing from the checklist is alarming until you know why.
+    final header = offCount == 0
+        ? 'Not scheduled today (${widget.habits.length})'
+        : 'Not scheduled today (${widget.habits.length}) · $offCount off';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,7 +554,7 @@ class _RestingSectionState extends State<_RestingSection> {
             child: Row(
               children: [
                 Text(
-                  'Not scheduled today (${widget.habits.length})',
+                  header,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -510,22 +571,37 @@ class _RestingSectionState extends State<_RestingSection> {
         ),
         if (_expanded)
           for (final habit in widget.habits)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(
-                backgroundColor: habit.color.withValues(alpha: 0.16),
-                child: Icon(habit.icon, size: 20, color: habit.color),
-              ),
-              title: Text(habit.title),
-              subtitle: Text(habit.schedule.label),
-              trailing: Text(
-                '${habit.completionsInWeekOf(widget.day, weekStartsOn: widget.weekStartsOn)}'
-                '/${habit.schedule.weeklyTarget}',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-              onTap: () => widget.onOpen(habit),
+            Builder(
+              builder: (context) {
+                final isOff = habit.isSkippedOn(widget.day);
+
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: habit.color.withValues(alpha: 0.16),
+                    child: Icon(habit.icon, size: 20, color: habit.color),
+                  ),
+                  title: Text(habit.title),
+                  subtitle: Text(
+                    isOff ? 'Day off' : habit.schedule.label,
+                    style: isOff
+                        ? TextStyle(color: scheme.primary)
+                        : null,
+                  ),
+                  trailing: isOff
+                      ? TextButton(
+                          onPressed: () => widget.onCancelDayOff(habit),
+                          child: const Text('Undo'),
+                        )
+                      : Text(
+                          '${habit.completionsInWeekOf(widget.day, weekStartsOn: widget.weekStartsOn)}'
+                          '/${habit.schedule.weeklyTarget}',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                  onTap: () => widget.onOpen(habit),
+                );
+              },
             ),
       ],
     );

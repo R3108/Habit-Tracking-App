@@ -4,12 +4,14 @@ import 'package:intl/intl.dart';
 import '../models/achievement.dart';
 import '../models/habit.dart';
 import '../models/insights.dart';
+import '../models/synergy.dart';
 import '../state/habit_store.dart';
 import '../state/settings_store.dart';
 import '../widgets/heatmap.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/weekday_chart.dart';
 import 'habit_detail_screen.dart';
+import 'weekly_review_screen.dart';
 
 /// Cross-habit statistics: the "am I actually doing this?" screen.
 class InsightsScreen extends StatelessWidget {
@@ -30,6 +32,7 @@ class InsightsScreen extends StatelessWidget {
     }
 
     final insights = OverallInsights.from(habits);
+    final synergies = findSynergies(habits);
 
     return Scaffold(
       body: CustomScrollView(
@@ -39,6 +42,14 @@ class InsightsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
             sliver: SliverList.list(
               children: [
+                _ReviewBanner(
+                  onOpen: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const WeeklyReviewScreen(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -96,6 +107,31 @@ class InsightsScreen extends StatelessWidget {
                     weekStartsOn: settings.weekStartsOn,
                   ),
                 ),
+                if (synergies.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _Section(
+                    title: 'Connections',
+                    subtitle: 'Habits that move together',
+                    child: Column(
+                      children: [
+                        for (final synergy in synergies)
+                          _SynergyRow(
+                            synergy: synergy,
+                            trigger: store.byId(synergy.triggerId),
+                            follower: store.byId(synergy.followerId),
+                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Patterns in your own history, not advice. Two habits '
+                          'can move together because something else drives both.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 _Section(
                   title: 'Habits',
@@ -145,6 +181,150 @@ class InsightsScreen extends StatelessWidget {
           ),
         ),
       );
+  }
+}
+
+/// Entry point to the written review, at the top where it will be seen.
+class _ReviewBanner extends StatelessWidget {
+  const _ReviewBanner({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Material(
+      color: scheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(
+                Icons.auto_stories_outlined,
+                color: scheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Weekly review',
+                      style: textTheme.titleSmall?.copyWith(
+                        color: scheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'What the last seven days actually say',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.onSecondaryContainer.withValues(
+                          alpha: 0.85,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: scheme.onSecondaryContainer),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One measured link between two habits.
+///
+/// Leads with the two rates rather than a multiplier: "78% against 34%" is a
+/// comparison anybody can check against their own memory, while "2.3× more
+/// likely" is a statistic the reader has to take on trust.
+class _SynergyRow extends StatelessWidget {
+  const _SynergyRow({
+    required this.synergy,
+    required this.trigger,
+    required this.follower,
+  });
+
+  final HabitSynergy synergy;
+  final Habit? trigger;
+  final Habit? follower;
+
+  @override
+  Widget build(BuildContext context) {
+    final trigger = this.trigger;
+    final follower = this.follower;
+    // Either habit can be deleted between the pairing and this build.
+    if (trigger == null || follower == null) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final positive = synergy.isPositive;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            positive ? Icons.trending_up : Icons.trending_down,
+            size: 20,
+            color: positive ? scheme.primary : scheme.error,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    style: textTheme.bodyMedium,
+                    children: [
+                      const TextSpan(text: 'On days you do '),
+                      TextSpan(
+                        text: trigger.title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: trigger.color,
+                        ),
+                      ),
+                      TextSpan(text: positive ? ', you also ' : ', you '),
+                      TextSpan(
+                        text: follower.title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: follower.color,
+                        ),
+                      ),
+                      TextSpan(
+                        text: positive ? ' far more often.' : ' far less often.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${synergy.withTriggerPercent}% against '
+                  '${synergy.withoutTriggerPercent}% on other days '
+                  '· ${synergy.daysWithTrigger + synergy.daysWithoutTrigger} days compared',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

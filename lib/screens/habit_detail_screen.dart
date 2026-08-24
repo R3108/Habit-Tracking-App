@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/habit.dart';
+import '../models/momentum.dart';
 import '../state/habit_store.dart';
 import '../state/settings_store.dart';
+import '../widgets/focus_card.dart';
 import '../widgets/habit_editor_sheet.dart';
 import '../widgets/month_calendar.dart';
 import '../widgets/stat_tile.dart';
@@ -47,8 +49,39 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
         note: draft.note,
         reminder: draft.reminder,
         clearReminder: draft.reminder == null,
+        anchorId: draft.anchorId,
+        clearAnchor: draft.anchorId == null,
       ),
     );
+  }
+
+  /// Flips [day] between "planned off" and ordinary, explaining the result.
+  ///
+  /// The confirmation matters more than it looks: long-press is easy to fire by
+  /// accident on a calendar the user is scrolling, and silently rewriting a
+  /// day's meaning is exactly the sort of thing that erodes trust in the
+  /// history.
+  void _toggleDayOff(HabitStore store, Habit habit, DateTime day) {
+    final wasOff = habit.isSkippedOn(day);
+    store.setSkipped(habit.id, day, !wasOff);
+
+    final label = DateFormat.MMMd().format(day);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(
+            wasOff
+                ? '$label counts again'
+                : '$label marked as a day off — it will not break the streak',
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () => store.setSkipped(habit.id, day, wasOff),
+          ),
+        ),
+      );
   }
 
   Future<void> _confirmDelete(Habit habit) async {
@@ -133,6 +166,8 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
           _HabitHeader(habit: habit),
           const SizedBox(height: 20),
           _StatGrid(habit: habit),
+          const SizedBox(height: 16),
+          _MomentumCard(momentum: HabitMomentum.of(habit), accent: habit.color),
           const SizedBox(height: 24),
           _Card(
             child: Column(
@@ -173,10 +208,12 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
                   month: _month,
                   weekStartsOn: settings.weekStartsOn,
                   onToggleDay: (day) => store.toggle(habit.id, day),
+                  onToggleDayOff: (day) => _toggleDayOff(store, habit, day),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Tap any past day to correct it.',
+                  'Tap any past day to correct it. Long-press to mark it as a '
+                  'day off, which no longer counts for or against you.',
                   style: textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -219,6 +256,29 @@ class _HabitDetailScreenState extends State<HabitDetailScreen> {
                   value: habit.reminder == null
                       ? 'Off'
                       : habit.reminder!.format(context),
+                ),
+                if (store.anchorOf(habit) case final anchor?) ...[
+                  const SizedBox(height: 12),
+                  _DetailRow(
+                    icon: Icons.link,
+                    label: 'Stacked after',
+                    value: anchor.title,
+                  ),
+                ],
+                if (store.followersOf(habit.id) case final followers
+                    when followers.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _DetailRow(
+                    icon: Icons.playlist_add_check,
+                    label: 'Leads into',
+                    value: followers.map((h) => h.title).join(', '),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.beach_access_outlined,
+                  label: 'Days off (30d)',
+                  value: '${habit.skipsInLast(30)}',
                 ),
                 const SizedBox(height: 12),
                 _DetailRow(
@@ -325,6 +385,82 @@ class _StatGrid extends StatelessWidget {
           accent: habit.color,
         ),
       ],
+    );
+  }
+}
+
+/// The recency-weighted read, next to the flat 30-day rate it corrects.
+///
+/// Deliberately spells out what the number means. "68%" on its own invites the
+/// user to read it as the completion rate two tiles up, and then to wonder why
+/// the app can't add up.
+class _MomentumCard extends StatelessWidget {
+  const _MomentumCard({required this.momentum, required this.accent});
+
+  final HabitMomentum momentum;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final String summary;
+    if (!momentum.hasEnoughHistory) {
+      summary = 'Not enough history yet — a few more scheduled days and this '
+          'starts tracking which way you are heading.';
+    } else {
+      summary = switch (momentum.trend) {
+        MomentumTrend.rising =>
+          'Rising. Up ${(momentum.delta * 100).round()} points on last week, '
+              'counting recent days most.',
+        MomentumTrend.falling =>
+          'Falling. Down ${(momentum.delta.abs() * 100).round()} points on '
+              'last week, counting recent days most.',
+        MomentumTrend.steady =>
+          'Steady. Recent days are landing about as often as they were a week '
+              'ago.',
+      };
+    }
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.speed, size: 20, color: accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Momentum',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              MomentumChip(momentum: momentum, accent: accent),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: momentum.hasEnoughHistory ? momentum.score : 0,
+              minHeight: 6,
+              backgroundColor: scheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation(accent),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            summary,
+            style: textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

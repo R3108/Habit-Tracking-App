@@ -93,11 +93,76 @@ class HabitStore extends ChangeNotifier {
     _mutate(id, (habit) => habit.copyWith(archived: archived));
   }
 
+  /// Marks [day] as planned time off for [id], or clears it.
+  void setSkipped(String id, DateTime day, bool skipped) {
+    _mutate(id, (habit) => habit.setSkipped(day, skipped));
+  }
+
+  /// Stacks [id] behind [anchorId], or unstacks it when [anchorId] is null.
+  ///
+  /// Refuses silently rather than throwing when the link would close a loop:
+  /// this is called straight from a picker, and the picker has already filtered
+  /// the illegal choices out. The check stays because a restored backup or a
+  /// later edit can make a previously fine link cyclic.
+  void setAnchor(String id, String? anchorId) {
+    if (anchorId != null && wouldCycle(id, anchorId)) return;
+    _mutate(
+      id,
+      (habit) => habit.copyWith(
+        anchorId: anchorId,
+        clearAnchor: anchorId == null,
+      ),
+    );
+  }
+
+  /// Whether pointing [id] at [anchorId] would create a cycle.
+  ///
+  /// Walks up from the proposed anchor looking for [id]. The step budget is a
+  /// backstop for a chain that is *already* circular in stored data — a fresh
+  /// cycle can't be longer than the habit list.
+  bool wouldCycle(String id, String anchorId) {
+    if (id == anchorId) return true;
+    var cursor = byId(anchorId);
+    for (var steps = 0; cursor != null && steps <= _habits.length; steps++) {
+      if (cursor.id == id) return true;
+      final next = cursor.anchorId;
+      if (next == null) return false;
+      cursor = byId(next);
+    }
+    return true;
+  }
+
+  /// The habit [habit] is stacked behind, or null when it stands alone.
+  ///
+  /// Resolves to null for a dangling id and for an archived anchor: a cue you
+  /// can no longer see is not a cue.
+  Habit? anchorOf(Habit habit) {
+    final id = habit.anchorId;
+    if (id == null) return null;
+    final anchor = byId(id);
+    return anchor == null || anchor.archived ? null : anchor;
+  }
+
+  /// The active habits stacked directly behind [id], in list order.
+  List<Habit> followersOf(String id) => List.unmodifiable(
+    _habits.where((h) => !h.archived && h.anchorId == id),
+  );
+
   /// Replaces a habit wholesale — what the editor hands back on save.
+  ///
+  /// The incoming anchor is validated here rather than trusted, because this is
+  /// the one door every edit comes through. The editor already hides the
+  /// choices that would loop; this catches the ones it couldn't know about, such
+  /// as a link that only became cyclic because another habit was re-stacked
+  /// while the sheet was open.
   void update(Habit habit) {
     final index = _habits.indexWhere((h) => h.id == habit.id);
     if (index == -1) return;
-    _habits[index] = habit;
+
+    final anchorId = habit.anchorId;
+    _habits[index] = anchorId != null && wouldCycle(habit.id, anchorId)
+        ? habit.copyWith(clearAnchor: true)
+        : habit;
     _commit();
   }
 
@@ -109,6 +174,7 @@ class HabitStore extends ChangeNotifier {
     int targetPerDay = 1,
     TimeOfDay? reminder,
     String note = '',
+    String? anchorId,
   }) {
     final habit = Habit(
       // Timestamped rather than a bare counter so ids stay unique across a
@@ -121,6 +187,9 @@ class HabitStore extends ChangeNotifier {
       targetPerDay: targetPerDay,
       reminder: reminder,
       note: note,
+      // A brand-new habit has no followers, so no id it can point at is
+      // reachable from it — this can never be the link that closes a cycle.
+      anchorId: anchorId,
     );
     _habits.add(habit);
     _commit();
@@ -183,15 +252,17 @@ class HabitStore extends ChangeNotifier {
     await notifications?.cancelAll();
   }
 
-  /// Habits the schedule asks for on [day], newest history included.
+  /// Habits actually expected on [day], newest history included.
+  ///
+  /// [Habit.isDueOn] covers the habit's own life, its schedule and any planned
+  /// day off, so a shielded day drops out of the checklist and out of the
+  /// denominator on the progress ring — which is what "day off" has to mean for
+  /// the ring to stay honest.
   List<Habit> dueOn(DateTime day) {
     final target = dateOnly(day);
     return <Habit>[
       for (final habit in _habits)
-        if (!habit.archived &&
-            !target.isBefore(habit.createdAt) &&
-            habit.schedule.isDueOn(target))
-          habit,
+        if (!habit.archived && habit.isDueOn(target)) habit,
     ];
   }
 

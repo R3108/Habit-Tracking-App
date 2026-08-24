@@ -67,9 +67,9 @@ class OverallInsights {
       var due = 0;
       var done = 0;
       for (final habit in active) {
-        // A habit can't be judged on days before it existed.
-        if (day.isBefore(habit.createdAt)) continue;
-        if (!habit.schedule.isDueOn(day)) continue;
+        // Covers days before the habit existed, days its schedule skips, and
+        // days the user planned off — none of which it can be judged on.
+        if (!habit.isDueOn(day)) continue;
         due++;
         if (habit.isCompletedOn(day)) done++;
       }

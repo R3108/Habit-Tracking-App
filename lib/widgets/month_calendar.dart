@@ -8,12 +8,19 @@ import '../util/haptics.dart';
 ///
 /// Days outside the habit's life or in the future are inert rather than hidden,
 /// so the grid keeps its shape and the eye can still count weeks down a column.
+///
+/// Tap toggles the completion; long-press marks the day as planned time off.
+/// Two gestures on one cell is a real cost, but the alternative — a separate
+/// "days off" editor — would divorce the decision from the history it is being
+/// made against, and the calendar is precisely where a user notices the week
+/// they were away.
 class MonthCalendar extends StatelessWidget {
   const MonthCalendar({
     super.key,
     required this.habit,
     required this.month,
     required this.onToggleDay,
+    required this.onToggleDayOff,
     this.weekStartsOn = DateTime.monday,
   });
 
@@ -23,6 +30,7 @@ class MonthCalendar extends StatelessWidget {
   final DateTime month;
 
   final ValueChanged<DateTime> onToggleDay;
+  final ValueChanged<DateTime> onToggleDayOff;
   final int weekStartsOn;
 
   static const _labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -90,6 +98,10 @@ class MonthCalendar extends StatelessWidget {
                             Haptics.tick(context);
                             onToggleDay(day);
                           },
+                          onLongPress: () {
+                            Haptics.impact(context);
+                            onToggleDayOff(day);
+                          },
                         );
                       },
                     ),
@@ -109,6 +121,7 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     required this.isEditable,
     required this.onTap,
+    required this.onLongPress,
   });
 
   final Habit habit;
@@ -116,10 +129,15 @@ class _DayCell extends StatelessWidget {
   final bool isToday;
   final bool isEditable;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isOff = habit.isSkippedOn(day);
+    // The raw schedule, not [Habit.isDueOn]: a day off still needs to be drawn
+    // as a day that *would* have been due, or it becomes indistinguishable from
+    // a weekend and the user loses track of what they set aside.
     final isDue = habit.schedule.isDueOn(day);
     final progress = habit.progressOn(day);
     final isDone = habit.isCompletedOn(day);
@@ -133,6 +151,9 @@ class _DayCell extends StatelessWidget {
     } else if (isPartial) {
       background = habit.color.withValues(alpha: 0.30);
       foreground = scheme.onSurface;
+    } else if (isOff) {
+      background = Colors.transparent;
+      foreground = scheme.primary;
     } else if (isDue && isEditable) {
       background = scheme.surfaceContainerHighest;
       foreground = scheme.onSurfaceVariant;
@@ -141,12 +162,31 @@ class _DayCell extends StatelessWidget {
       foreground = scheme.onSurfaceVariant.withValues(alpha: 0.45);
     }
 
+    final Border? border;
+    if (isToday) {
+      border = Border.all(color: scheme.onSurface, width: 1.5);
+    } else if (isOff) {
+      border = Border.all(color: scheme.primary.withValues(alpha: 0.55));
+    } else if (isDue && !isDone && !isPartial && isEditable) {
+      border = Border.all(color: scheme.outlineVariant);
+    } else {
+      border = null;
+    }
+
     return Semantics(
       button: isEditable,
-      label: '${DateFormat.MMMMd().format(day)}, '
-          '${isDone ? 'done' : isDue ? 'not done' : 'not scheduled'}',
+      label:
+          '${DateFormat.MMMMd().format(day)}, '
+          '${isOff
+              ? 'day off'
+              : isDone
+              ? 'done'
+              : isDue
+              ? 'not done'
+              : 'not scheduled'}',
       child: InkResponse(
         onTap: isEditable ? onTap : null,
+        onLongPress: isEditable ? onLongPress : null,
         radius: 22,
         child: SizedBox(
           height: 40,
@@ -158,18 +198,33 @@ class _DayCell extends StatelessWidget {
               decoration: BoxDecoration(
                 color: background,
                 shape: BoxShape.circle,
-                border: isToday
-                    ? Border.all(color: scheme.onSurface, width: 1.5)
-                    : (isDue && !isDone && !isPartial && isEditable
-                          ? Border.all(color: scheme.outlineVariant)
-                          : null),
+                border: border,
               ),
-              child: Text(
-                '${day.day}',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: foreground,
-                  fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${day.day}',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: foreground,
+                      fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+                      height: 1,
+                    ),
+                  ),
+                  // A dot rather than an icon: at 34px a glyph next to a
+                  // two-digit date is unreadable, and the dot only has to say
+                  // "this one is different" — the colour says the rest.
+                  if (isOff)
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: scheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),

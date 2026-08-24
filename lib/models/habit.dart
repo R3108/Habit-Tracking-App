@@ -161,8 +161,11 @@ class Habit {
     this.reminder,
     this.note = '',
     this.archived = false,
+    this.anchorId,
+    Set<DateTime> skippedDays = const {},
     DateTime? createdAt,
   }) : entries = _normalise(entries, completedDays, targetPerDay),
+       skippedDays = _normaliseSkips(skippedDays, entries, completedDays),
        createdAt = dateOnly(
          createdAt ?? _earliestOf(entries, completedDays) ?? DateTime.now(),
        );
@@ -187,6 +190,27 @@ class Habit {
 
   final String note;
   final bool archived;
+
+  /// The habit this one is stacked behind, or null when it stands alone.
+  ///
+  /// "After I meditate, I read" — the anchor is the cue. Stored as an id rather
+  /// than a reference because habits are immutable snapshots: holding the object
+  /// would pin a stale copy of the anchor's history inside this one.
+  ///
+  /// The id may dangle. A habit deleted from under its followers leaves them
+  /// pointing at nothing, and every reader treats an unresolvable anchor as "no
+  /// anchor" rather than as an error — losing the cue must never cost the habit.
+  final String? anchorId;
+
+  /// Days deliberately taken off: illness, holiday, a rest week.
+  ///
+  /// A skipped day is not due, so it neither breaks a streak nor counts against
+  /// a completion rate — it is stepped over exactly like a day the schedule
+  /// never asked for. That is the whole point: without it, the only way to
+  /// protect a 40-day streak through a week's flu is to lie and tick the boxes,
+  /// which corrupts the history the app exists to keep honest.
+  final Set<DateTime> skippedDays;
+
   final DateTime createdAt;
 
   static Map<DateTime, int> _normalise(
@@ -204,6 +228,28 @@ class Habit {
       out[dateOnly(day)] = target;
     }
     return Map<DateTime, int>.unmodifiable(out);
+  }
+
+  /// Drops any skip for a day that has history against it.
+  ///
+  /// Doing something on a day you had written off is not a contradiction to
+  /// resolve later — it just means the day was not off after all. Resolving it
+  /// here rather than at each call site means [copyWith], and therefore every
+  /// mutation, cannot leave a day both worked and skipped.
+  static Set<DateTime> _normaliseSkips(
+    Set<DateTime> skipped,
+    Map<DateTime, int> entries,
+    Set<DateTime> completedDays,
+  ) {
+    final worked = <DateTime>{
+      for (final entry in entries.entries)
+        if (entry.value > 0) dateOnly(entry.key),
+      for (final day in completedDays) dateOnly(day),
+    };
+    return Set<DateTime>.unmodifiable(<DateTime>{
+      for (final day in skipped)
+        if (!worked.contains(dateOnly(day))) dateOnly(day),
+    });
   }
 
   static DateTime? _earliestOf(
@@ -226,6 +272,50 @@ class Habit {
   int progressOn(DateTime day) => entries[dateOnly(day)] ?? 0;
 
   bool isCompletedOn(DateTime day) => progressOn(day) >= effectiveTarget;
+
+  bool isSkippedOn(DateTime day) => skippedDays.contains(dateOnly(day));
+
+  /// Whether this habit is actually expected on [day].
+  ///
+  /// Three things can excuse a day, and every caller wants all three: the habit
+  /// did not exist yet, the schedule doesn't ask for it, or the user planned the
+  /// day off. [HabitSchedule.isDueOn] answers only the middle one, so prefer
+  /// this everywhere a day is being judged.
+  bool isDueOn(DateTime day) {
+    final key = dateOnly(day);
+    if (key.isBefore(createdAt)) return false;
+    if (skippedDays.contains(key)) return false;
+    return schedule.isDueOn(key);
+  }
+
+  /// Returns a copy with [day] marked as planned time off, or cleared.
+  ///
+  /// Skipping a day it has history on would be thrown away by the constructor's
+  /// normalisation, so the completion is cleared first — the user asking for a
+  /// day off on a day they already ticked means they want the tick gone.
+  Habit setSkipped(DateTime day, bool skipped) {
+    final key = dateOnly(day);
+    if (isSkippedOn(key) == skipped) return this;
+
+    final next = Set<DateTime>.of(skippedDays);
+    if (skipped) {
+      next.add(key);
+      final entries = Map<DateTime, int>.of(this.entries)..remove(key);
+      return copyWith(entries: entries, skippedDays: next);
+    }
+    next.remove(key);
+    return copyWith(skippedDays: next);
+  }
+
+  /// Planned days off inside the last [days] days, for the "shields used" count.
+  int skipsInLast(int days) {
+    final today = dateOnly(DateTime.now());
+    var count = 0;
+    for (var i = 0; i < days; i++) {
+      if (isSkippedOn(addDays(today, -i))) count++;
+    }
+    return count;
+  }
 
   /// Days that reached the target, for callers that only care about done/not.
   Set<DateTime> get completedDays => <DateTime>{
@@ -281,10 +371,11 @@ class Habit {
   /// Consecutive completed *due* days ending today.
   ///
   /// A day the schedule doesn't ask for is stepped over rather than counted, so
-  /// a Mon/Wed/Fri habit keeps its streak across the weekend. A due day that
-  /// hasn't been marked yet doesn't break the streak either — the count falls
-  /// back to the previous due day, so an unticked morning doesn't read as a
-  /// miss.
+  /// a Mon/Wed/Fri habit keeps its streak across the weekend. A day the user
+  /// planned off is stepped over the same way — that is what a shield buys. A
+  /// due day that hasn't been marked yet doesn't break the streak either: the
+  /// count falls back to the previous due day, so an unticked morning doesn't
+  /// read as a miss.
   int get streak => streakAsOf(DateTime.now());
 
   int streakAsOf(DateTime reference) {
@@ -296,7 +387,7 @@ class Habit {
     final floor = firstLoggedDay;
     var count = 0;
     while (!cursor.isBefore(floor)) {
-      if (!schedule.isDueOn(cursor)) {
+      if (!isDueOn(cursor)) {
         cursor = addDays(cursor, -1);
         continue;
       }
@@ -317,7 +408,7 @@ class Habit {
     var cursor = firstLoggedDay;
 
     while (!cursor.isAfter(today)) {
-      if (schedule.isDueOn(cursor)) {
+      if (isDueOn(cursor)) {
         if (isCompletedOn(cursor)) {
           run++;
           if (run > best) best = run;
@@ -344,14 +435,12 @@ class Habit {
   /// How many of the last [days] days the schedule actually asked for.
   ///
   /// Days before the habit existed don't count against it — a habit added
-  /// yesterday shouldn't show a 3% month.
+  /// yesterday shouldn't show a 3% month — and neither do days planned off.
   int dueDaysInLast(int days) {
     final today = dateOnly(DateTime.now());
     var count = 0;
     for (var i = 0; i < days; i++) {
-      final day = addDays(today, -i);
-      if (day.isBefore(createdAt)) continue;
-      if (schedule.isDueOn(day)) count++;
+      if (isDueOn(addDays(today, -i))) count++;
     }
     return count;
   }
@@ -382,10 +471,14 @@ class Habit {
     HabitSchedule? schedule,
     String? note,
     bool? archived,
+    Set<DateTime>? skippedDays,
     // Passing null for a reminder should be able to *clear* it, which an
-    // ordinary nullable parameter cannot express.
+    // ordinary nullable parameter cannot express. The anchor has the same
+    // problem: unstacking a habit *is* setting it to null.
     bool clearReminder = false,
     TimeOfDay? reminder,
+    bool clearAnchor = false,
+    String? anchorId,
   }) {
     return Habit(
       id: id,
@@ -398,6 +491,8 @@ class Habit {
       reminder: clearReminder ? null : (reminder ?? this.reminder),
       note: note ?? this.note,
       archived: archived ?? this.archived,
+      anchorId: clearAnchor ? null : (anchorId ?? this.anchorId),
+      skippedDays: skippedDays ?? this.skippedDays,
       createdAt: createdAt,
     );
   }
@@ -414,6 +509,8 @@ class Habit {
         : reminder!.hour * 60 + reminder!.minute,
     'note': note,
     'archived': archived,
+    'anchorId': anchorId,
+    'skipped': (skippedDays.toList()..sort()).map(_encodeDay).toList(),
     'createdAt': _encodeDay(createdAt),
     // Compact on purpose: a year of daily history is ~365 short strings, and
     // the whole payload has to fit comfortably in shared preferences.
@@ -434,8 +531,19 @@ class Habit {
 
     final reminderMinutes = (json['reminder'] as num?)?.toInt();
 
+    // Absent in schema v1 payloads, which is exactly what an empty set means.
+    final rawSkips = (json['skipped'] as List<dynamic>?) ?? const <dynamic>[];
+    final skipped = <DateTime>{
+      for (final raw in rawSkips) ?_decodeDay(raw as String?),
+    };
+
+    // An anchor pointing at this very habit is the one cycle a single habit can
+    // create on its own, and it would make the stack resolver spin.
+    final anchorId = json['anchorId'] as String?;
+    final id = json['id'] as String? ?? UniqueKey().toString();
+
     return Habit(
-      id: json['id'] as String? ?? UniqueKey().toString(),
+      id: id,
       title: json['title'] as String? ?? 'Habit',
       icon: iconForKey(json['icon'] as String?),
       color: Color((json['color'] as num?)?.toInt() ?? 0xFF2E7D32),
@@ -454,6 +562,8 @@ class Habit {
             ),
       note: json['note'] as String? ?? '',
       archived: json['archived'] as bool? ?? false,
+      anchorId: anchorId == id ? null : anchorId,
+      skippedDays: skipped,
       createdAt: _decodeDay(json['createdAt'] as String?),
     );
   }

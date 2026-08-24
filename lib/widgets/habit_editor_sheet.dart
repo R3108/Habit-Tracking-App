@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/habit.dart';
 import '../models/habit_icons.dart';
+import '../state/habit_store.dart';
 
 /// What [HabitEditorSheet] hands back when the user confirms.
 typedef HabitDraft = ({
@@ -12,6 +13,7 @@ typedef HabitDraft = ({
   int targetPerDay,
   TimeOfDay? reminder,
   String note,
+  String? anchorId,
 });
 
 /// Creates or edits a habit.
@@ -56,6 +58,7 @@ class _HabitEditorSheetState extends State<HabitEditorSheet> {
       widget.initial?.schedule ?? const HabitSchedule.daily();
   late int _targetPerDay = widget.initial?.targetPerDay ?? 1;
   late TimeOfDay? _reminder = widget.initial?.reminder;
+  late String? _anchorId = widget.initial?.anchorId;
 
   bool get _isEditing => widget.initial != null;
 
@@ -93,7 +96,21 @@ class _HabitEditorSheetState extends State<HabitEditorSheet> {
       targetPerDay: _targetPerDay,
       reminder: _reminder,
       note: _noteController.text.trim(),
+      anchorId: _anchorId,
     ));
+  }
+
+  /// Habits this one may be stacked behind.
+  ///
+  /// Itself is excluded, and so is anything that already depends on it —
+  /// stacking A after B when B is already after A would leave a pair of habits
+  /// each waiting for the other.
+  List<Habit> _anchorCandidates(HabitStore store) {
+    final self = widget.initial;
+    if (self == null) return store.habits;
+    return store.habits
+        .where((h) => h.id != self.id && !store.wouldCycle(self.id, h.id))
+        .toList();
   }
 
   Future<void> _pickReminder() async {
@@ -177,6 +194,37 @@ class _HabitEditorSheetState extends State<HabitEditorSheet> {
                     value: _targetPerDay,
                     onChanged: (value) => setState(() => _targetPerDay = value),
                   ),
+                  const SizedBox(height: 24),
+                  Builder(
+                    builder: (context) {
+                      final candidates = _anchorCandidates(
+                        HabitScope.of(context),
+                      );
+                      if (candidates.isEmpty) return const SizedBox.shrink();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _SectionLabel('Stack it after'),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Tie this to a habit you already keep, so the '
+                            'finished one becomes the cue for this one.',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 10),
+                          _AnchorPicker(
+                            candidates: candidates,
+                            selectedId: _anchorId,
+                            accent: _color,
+                            onSelect: (id) => setState(() => _anchorId = id),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      );
+                    },
+                  ),
                   const SizedBox(height: 16),
                   _SectionLabel('Reminder'),
                   const SizedBox(height: 4),
@@ -214,6 +262,51 @@ class _HabitEditorSheetState extends State<HabitEditorSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Picks the habit this one is stacked behind — "None" plus one chip each.
+///
+/// Chips rather than a dropdown because the choice is small, and because a
+/// dropdown hides the fact that stacking is optional behind a tap.
+class _AnchorPicker extends StatelessWidget {
+  const _AnchorPicker({
+    required this.candidates,
+    required this.selectedId,
+    required this.accent,
+    required this.onSelect,
+  });
+
+  final List<Habit> candidates;
+  final String? selectedId;
+  final Color accent;
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ChoiceChip(
+          label: const Text('On its own'),
+          selected: selectedId == null,
+          onSelected: (_) => onSelect(null),
+        ),
+        for (final habit in candidates)
+          ChoiceChip(
+            avatar: Icon(habit.icon, size: 18, color: habit.color),
+            label: Text(
+              habit.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            selected: selectedId == habit.id,
+            selectedColor: accent.withValues(alpha: 0.20),
+            onSelected: (selected) => onSelect(selected ? habit.id : null),
+          ),
+      ],
     );
   }
 }

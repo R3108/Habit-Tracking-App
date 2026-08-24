@@ -20,22 +20,37 @@ class HabitCard extends StatelessWidget {
     required this.onEdit,
     required this.onArchive,
     required this.onDelete,
+    required this.onDayOff,
+    this.anchor,
+    this.isCued = false,
   });
 
   final Habit habit;
   final DateTime day;
+
+  /// The habit this one is stacked behind, already resolved, or null.
+  final Habit? anchor;
+
+  /// True when the anchor has been completed on [day] — the cue has fired.
+  final bool isCued;
+
   final VoidCallback onToggle;
   final VoidCallback onIncrement;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onArchive;
   final VoidCallback onDelete;
+  final VoidCallback onDayOff;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final isDone = habit.isCompletedOn(day);
+
+    // A fired cue is worth pointing at, but only while it is still actionable:
+    // once the habit itself is done the highlight has nothing left to prompt.
+    final showCue = isCued && !isDone;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -67,7 +82,10 @@ class HabitCard extends StatelessWidget {
                 border: Border.all(
                   color: isDone
                       ? habit.color.withValues(alpha: 0.40)
+                      : showCue
+                      ? habit.color.withValues(alpha: 0.55)
                       : scheme.outlineVariant,
+                  width: showCue ? 1.5 : 1,
                 ),
               ),
               padding: const EdgeInsets.symmetric(
@@ -107,6 +125,12 @@ class HabitCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
+                        if (anchor case final anchor?)
+                          _StackHint(
+                            anchor: anchor,
+                            hasFired: showCue,
+                            accent: habit.color,
+                          ),
                         _SubtitleRow(habit: habit, day: day),
                       ],
                     ),
@@ -143,47 +167,60 @@ class HabitCard extends StatelessWidget {
     Haptics.tick(context);
     final action = await showModalBottomSheet<String>(
       context: context,
+      // Scrollable because the menu is now tall enough to overflow the sheet's
+      // default 9/16-of-screen ceiling on a short device, and a bottom sheet
+      // that clips its last action is a menu with an unreachable Delete.
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(habit.icon, color: habit.color),
-              title: Text(habit.title),
-              subtitle: Text(habit.schedule.label),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.insights),
-              title: const Text('View history'),
-              onTap: () => Navigator.pop(sheetContext, 'open'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit habit'),
-              onTap: () => Navigator.pop(sheetContext, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: const Text('Archive'),
-              subtitle: const Text('Hides it but keeps the history'),
-              onTap: () => Navigator.pop(sheetContext, 'archive'),
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.delete_outline,
-                color: Theme.of(sheetContext).colorScheme.error,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(habit.icon, color: habit.color),
+                title: Text(habit.title),
+                subtitle: Text(habit.schedule.label),
               ),
-              title: Text(
-                'Delete',
-                style: TextStyle(
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.insights),
+                title: const Text('View history'),
+                onTap: () => Navigator.pop(sheetContext, 'open'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit habit'),
+                onTap: () => Navigator.pop(sheetContext, 'edit'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.beach_access_outlined),
+                title: const Text('Take the day off'),
+                subtitle: const Text(
+                  "Doesn't count as a miss — the streak survives",
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'dayOff'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Archive'),
+                subtitle: const Text('Hides it but keeps the history'),
+                onTap: () => Navigator.pop(sheetContext, 'archive'),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
                   color: Theme.of(sheetContext).colorScheme.error,
                 ),
+                title: Text(
+                  'Delete',
+                  style: TextStyle(
+                    color: Theme.of(sheetContext).colorScheme.error,
+                  ),
+                ),
+                onTap: () => Navigator.pop(sheetContext, 'delete'),
               ),
-              onTap: () => Navigator.pop(sheetContext, 'delete'),
-            ),
-            const SizedBox(height: 8),
-          ],
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -193,11 +230,62 @@ class HabitCard extends StatelessWidget {
         onOpen();
       case 'edit':
         onEdit();
+      case 'dayOff':
+        onDayOff();
       case 'archive':
         onArchive();
       case 'delete':
         onDelete();
     }
+  }
+}
+
+/// "After Meditate" — the cue this habit is stacked behind.
+///
+/// Turns from a hint into a prompt once the anchor is done, which is the only
+/// moment the stack is telling the user something they don't already know.
+class _StackHint extends StatelessWidget {
+  const _StackHint({
+    required this.anchor,
+    required this.hasFired,
+    required this.accent,
+  });
+
+  final Habit anchor;
+  final bool hasFired;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = hasFired ? accent : scheme.onSurfaceVariant;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          Icon(
+            hasFired ? Icons.arrow_forward : Icons.link,
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              hasFired
+                  ? '"${anchor.title}" done — you\'re up'
+                  : 'After "${anchor.title}"',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: hasFired ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -212,9 +300,8 @@ class _SubtitleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: scheme.onSurfaceVariant,
-    );
+    final style = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: scheme.onSurfaceVariant);
     final streak = habit.streak;
     final weekly = habit.completionsInWeekOf(day);
 
@@ -225,11 +312,7 @@ class _SubtitleRow extends StatelessWidget {
       child: Row(
         children: [
           if (streak > 0) ...[
-            Icon(
-              Icons.local_fire_department,
-              size: 14,
-              color: habit.color,
-            ),
+            Icon(Icons.local_fire_department, size: 14, color: habit.color),
             const SizedBox(width: 3),
             Text(
               '$streak',
