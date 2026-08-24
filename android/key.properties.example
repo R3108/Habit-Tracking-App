@@ -1,0 +1,16 @@
+# Copy to android/key.properties and fill in, then keep it out of git.
+#
+# Create the upload keystore once:
+#
+#   keytool -genkey -v -keystore %USERPROFILE%\habitflow-upload.jks ^
+#     -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# Back the .jks file up somewhere offline. If it is lost, the Play listing can
+# never be updated again under the same app — the only recovery is asking
+# Google to reset the upload key, and only if Play App Signing is enabled.
+
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=upload
+# Absolute path, or relative to the android/app directory.
+storeFile=C:/Users/RIDDHIMAN/habitflow-upload.jks
