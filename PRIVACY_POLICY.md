@@ -28,15 +28,26 @@ leaves it:
     note. HabitFlow asks for no photographs and holds no food database.
   - **Focus** — the length, time and label of each work session.
   - **Fitness** — the type, duration and effort of each workout, and any note.
+  - **Check-in** — a daily mood and energy rating, and any note.
+- Any tracker you create yourself, including its name, unit and target, and the
+  numbers you record against it. HabitFlow does not inspect or interpret what
+  you choose to track there — it stores the name you typed and the numbers you
+  entered, like any other field.
 - The targets you set for those trackers.
 - Your preferences — theme, accent colour, first day of the week, reminder and
   haptics settings.
 
-Some of this is health and fitness information. It is treated exactly like
-everything else in the app: written to your device's private app storage, read
-only by HabitFlow, and never transmitted. The app requests no access to Health
-Connect, Google Fit, Apple Health or any other health service, and reads nothing
-from your device's sensors — every figure comes from what you typed in.
+Some of this is health and fitness information, and the daily check-in is about
+your mental wellbeing. It is all treated exactly like everything else in the
+app: written to your device's private app storage, read only by HabitFlow, and
+never transmitted. The app requests no access to Health Connect, Google Fit,
+Apple Health or any other health service, and reads nothing from your device's
+sensors — every figure comes from what you typed in.
+
+The **Discoveries** section on the Insights screen compares your trackers
+against each other to spot patterns. That comparison runs entirely on your
+device, over data already stored there, and produces no new kind of information
+about you — only observations about the numbers you have already entered.
 
 No other app can read this data. It is removed when you uninstall HabitFlow.
 

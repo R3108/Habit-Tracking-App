@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../models/habit.dart';
+import '../../models/trackers/check_in_entry.dart';
+import '../../models/trackers/custom_tracker.dart';
 import '../../models/trackers/fitness_entry.dart';
 import '../../models/trackers/focus_entry.dart';
 import '../../models/trackers/reading_entry.dart';
@@ -9,6 +11,8 @@ import '../../models/trackers/tracker_goals.dart';
 import '../../models/trackers/tracker_kind.dart';
 import '../../models/trackers/water_entry.dart';
 import '../../state/tracker_store.dart';
+import 'check_in_screen.dart';
+import 'custom_tracker_screen.dart';
 import 'fitness_screen.dart';
 import 'focus_screen.dart';
 import 'food_screen.dart';
@@ -39,7 +43,17 @@ class TrackersHubScreen extends StatelessWidget {
     final fitness = FitnessInsights.from(store.data.workouts);
     final todayFood = store.foodOn(today);
 
+    final checkIn = store.checkInOn(today);
+
     final summaries = <TrackerKind, ({String value, double progress})?>{
+      TrackerKind.checkIn: checkIn == null
+          ? null
+          : (
+              value:
+                  '${kMoodLabels[checkIn.mood - 1]} · '
+                  '${kEnergyLabels[checkIn.energy - 1]}',
+              progress: checkIn.overall / 5,
+            ),
       TrackerKind.sleep: store.sleepOn(today) == null
           ? (sleep.hasData
                 ? (
@@ -122,6 +136,52 @@ class TrackersHubScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                 ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Your own',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.add),
+                      label: const Text('New tracker'),
+                      onPressed: () => _createTracker(context, store),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (store.data.activeCustomTrackers.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'The six above each compute something specific to them. '
+                      'For anything else — steps, coffees, guitar practice — '
+                      'make your own and it gets the honest generic treatment: '
+                      'a target, a streak, an average and a week of bars.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                else
+                  for (final tracker in store.data.activeCustomTrackers) ...[
+                    _CustomTrackerTile(
+                      tracker: tracker,
+                      today: store.customValueOn(tracker.id, today),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              CustomTrackerScreen(trackerId: tracker.id),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 const SizedBox(height: 8),
                 Text(
                   'Every number here is worked out on this device from what you '
@@ -139,10 +199,34 @@ class TrackersHubScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _createTracker(BuildContext context, TrackerStore store) async {
+    final draft = await CustomTrackerEditor.show(context);
+    if (draft == null) return;
+
+    final tracker = store.addCustomTracker(
+      name: draft.name,
+      kind: draft.kind,
+      iconKey: draft.iconKey,
+      colorValue: draft.colorValue,
+      unit: draft.unit,
+      dailyTarget: draft.dailyTarget,
+      step: draft.step,
+      lowerIsBetter: draft.lowerIsBetter,
+    );
+
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CustomTrackerScreen(trackerId: tracker.id),
+      ),
+    );
+  }
+
   void _open(BuildContext context, TrackerKind kind) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => switch (kind) {
+          TrackerKind.checkIn => const CheckInScreen(),
           TrackerKind.sleep => const SleepScreen(),
           TrackerKind.water => const WaterScreen(),
           TrackerKind.reading => const ReadingScreen(),
@@ -232,6 +316,98 @@ class _TrackerTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A user-defined tracker on the hub.
+///
+/// Shows the same shape as a built-in tile, but always shows today's number
+/// even when it is zero: for a tracker the user made themselves, a blank row is
+/// indistinguishable from one that is broken.
+class _CustomTrackerTile extends StatelessWidget {
+  const _CustomTrackerTile({
+    required this.tracker,
+    required this.today,
+    required this.onTap,
+  });
+
+  final CustomTracker tracker;
+  final double today;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: tracker.color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(tracker.icon, color: tracker.color),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tracker.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${tracker.format(today)} · '
+                      '${tracker.lowerIsBetter ? 'under' : 'of'} '
+                      '${tracker.format(tracker.dailyTarget)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: tracker.color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: tracker.share(today),
+                        minHeight: 5,
+                        backgroundColor: scheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation(tracker.color),
+                      ),
+                    ),
                   ],
                 ),
               ),

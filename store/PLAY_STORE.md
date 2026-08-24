@@ -84,13 +84,25 @@ SEE THE WHOLE PICTURE
 • Current and best streak, total completions and a 30-day success rate
 • Ten milestones to unlock as your history grows
 
-SIX BUILT-IN TRACKERS
+BUILT-IN TRACKERS
 • Sleep — hours, bedtime regularity, sleep debt and weekend body-clock drift
 • Water — one tap per drink, plus whether you're ahead or behind for the hour
 • Reading — pages and minutes, a reading speed, and a finish date for your book
 • Food — meal times, your eating window, and balance without calorie counting
 • Focus — a Pomodoro timer, and where your deep work actually went
 • Fitness — active minutes, and whether this week is more than you're used to
+• Check-in — mood and energy in two taps
+
+TRACK ANYTHING ELSE
+Make your own tracker for steps, coffees, guitar practice or whatever you like.
+Counts, durations, amounts with your own unit, or a simple 1–5 rating — and a
+"lower is better" mode for the things you want less of.
+
+FIND OUT WHAT ACTUALLY HELPS
+HabitFlow compares your trackers against each other, on your phone, and tells
+you what it finds: "on days you slept over 7h, your mood averaged 4.2 against
+2.8 on the rest." Patterns from your own history, shown with the numbers behind
+them so you can judge for yourself.
 
 GENTLE REMINDERS
 Give any habit a time and HabitFlow will nudge you on the days it's due.
@@ -120,9 +132,9 @@ Answer as follows — all of it is verifiable from the source:
 
 ### Health data — read this before submitting
 
-Since 1.1.0 the app stores sleep times, meals, and workouts. That is health and
-fitness data, and it changes what needs checking even though the answers above
-stay the same:
+Since 1.1.0 the app stores sleep times, meals, and workouts; since 1.2.0 it also
+stores a daily mood and energy rating, which is mental-wellbeing data. That
+changes what needs checking even though the answers above stay the same:
 
 - Play's data-safety form defines *collection* as transmitting data off the
   device. Nothing here is transmitted, so **No** remains correct — but the claim
@@ -138,9 +150,16 @@ stay the same:
 - `PRIVACY_POLICY.md` enumerates the health data explicitly. Play checks the
   policy against the form; keep the two in step.
 
-The app gives no medical advice and makes no diagnostic claim. The one place it
-comes close is the fitness screen's training-load ratio, which is worded as an
-observation about the user's own logged history rather than as guidance.
+- **Custom trackers let the user record anything**, including things the app has
+  no idea about. Nothing is transmitted, so the data-safety answers do not
+  change — but it is one more reason the "no `INTERNET` permission" check is the
+  load-bearing one.
+
+The app gives no medical advice and makes no diagnostic claim. Two places come
+closest and are worded as observations about the user's own logged history
+rather than as guidance: the fitness screen's training-load ratio, and the
+Discoveries section on Insights, which also states in the UI that its findings
+are searched correlations rather than facts.
 
 The app makes no network requests. `INTERNET` is not declared in the app's own
 manifest; verify what the merged manifest ends up with before submitting:
@@ -219,7 +238,7 @@ URL — GitHub Pages is the least-effort option:
 
 Verified for 1.0.0 on 24 Aug 2026:
 
-- [x] `flutter test` — 249 passing
+- [x] `flutter test` — 311 passing
 - [x] `flutter analyze` — clean
 - [x] `flutter build appbundle --release` — `app-release.aab`, 50.3 MB
 - [x] Merged manifest declares no `INTERNET` permission

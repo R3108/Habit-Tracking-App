@@ -3,7 +3,7 @@
 /// Kept in sync by hand with `version:` in pubspec.yaml. The alternative is
 /// another plugin dependency to read the package metadata at runtime, which is
 /// a lot of machinery for one string.
-const String kAppVersion = '1.1.0';
+const String kAppVersion = '1.2.0';
 
 const String kAppName = 'HabitFlow';
 
@@ -27,15 +27,21 @@ WHAT IS STORED ON YOUR DEVICE
 • The habits you create, including title, icon, colour, schedule and note.
 • The days you have marked each habit complete, and any days you planned off.
 • What you enter into the trackers: sleep times and ratings, water, books with
-  pages and minutes, meal times and tags, focus sessions, and workouts with
-  their duration and effort.
+  pages and minutes, meal times and tags, focus sessions, workouts with their
+  duration and effort, and your daily mood and energy check-in.
+• Any tracker you create yourself — its name, unit and target, and the numbers
+  you record against it.
 • The targets you set for those trackers.
 • Your app preferences, such as theme and reminder settings.
 
-Some of that is health and fitness information. It is treated like everything
-else here: private app storage, never transmitted. HabitFlow reads nothing from
-Health Connect, Google Fit or your device's sensors — every figure comes from
-what you typed in.
+Some of that is health and fitness information, and the check-in is about your
+mental wellbeing. It is treated like everything else here: private app storage,
+never transmitted. HabitFlow reads nothing from Health Connect, Google Fit or
+your device's sensors — every figure comes from what you typed in.
+
+Discoveries on the Insights screen compare your trackers against each other.
+That runs on this device, over data already stored here, and tells you nothing
+about yourself that your own entries did not already contain.
 
 PERMISSIONS
 • Notifications — used only to show the reminders you schedule yourself.

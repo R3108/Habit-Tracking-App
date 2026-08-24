@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/achievement.dart';
+import '../models/daily_signal.dart';
+import '../models/discovery.dart';
 import '../models/habit.dart';
 import '../models/insights.dart';
 import '../models/synergy.dart';
 import '../state/habit_store.dart';
 import '../state/settings_store.dart';
+import '../state/tracker_store.dart';
 import '../widgets/heatmap.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/weekday_chart.dart';
@@ -33,6 +36,12 @@ class InsightsScreen extends StatelessWidget {
 
     final insights = OverallInsights.from(habits);
     final synergies = findSynergies(habits);
+    final discoveries = findDiscoveries(
+      buildSignals(
+        habits: habits,
+        trackers: TrackerScope.of(context).data,
+      ),
+    );
 
     return Scaffold(
       body: CustomScrollView(
@@ -107,6 +116,30 @@ class InsightsScreen extends StatelessWidget {
                     weekStartsOn: settings.weekStartsOn,
                   ),
                 ),
+                if (discoveries.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _Section(
+                    title: 'Discoveries',
+                    subtitle: 'What your trackers say about each other',
+                    child: Column(
+                      children: [
+                        for (final discovery in discoveries)
+                          _DiscoveryRow(discovery: discovery),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Found by comparing every tracker against every '
+                          'other, so treat these as leads rather than facts — '
+                          'search hard enough and coincidences turn up. Only '
+                          'sizeable differences over at least two weeks are '
+                          'shown.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (synergies.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   _Section(
@@ -237,6 +270,81 @@ class _ReviewBanner extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// One cross-tracker finding.
+///
+/// Leads with the two group means rather than the effect size, for the same
+/// reason [_SynergyRow] leads with two rates: "82% against 54%" is a comparison
+/// anybody can check against their own memory, and a Cohen's d of 0.9 is not.
+class _DiscoveryRow extends StatelessWidget {
+  const _DiscoveryRow({required this.discovery});
+
+  final Discovery discovery;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final driver = discovery.driver;
+    final outcome = discovery.outcome;
+    final better = discovery.isPositive;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            better ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 20,
+            color: better ? scheme.primary : scheme.error,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text.rich(
+                  TextSpan(
+                    style: textTheme.bodyMedium,
+                    children: [
+                      const TextSpan(text: 'On days your '),
+                      TextSpan(
+                        text: driver.label.toLowerCase(),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      TextSpan(
+                        text: ' was above ${driver.format(discovery.threshold)}'
+                            ', your ',
+                      ),
+                      TextSpan(
+                        text: outcome.label.toLowerCase(),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      TextSpan(
+                        text: ' averaged '
+                            '${outcome.format(discovery.highMean)} — against '
+                            '${outcome.format(discovery.lowMean)} on the rest.',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${discovery.strength} difference · '
+                  '${discovery.days} days compared',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

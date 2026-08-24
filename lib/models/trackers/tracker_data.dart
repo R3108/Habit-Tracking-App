@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../habit.dart';
+import 'check_in_entry.dart';
+import 'custom_tracker.dart';
 import 'fitness_entry.dart';
 import 'focus_entry.dart';
 import 'food_entry.dart';
@@ -32,6 +34,9 @@ class TrackerData {
     this.food = const <DateTime, FoodDay>{},
     this.focus = const <FocusSession>[],
     this.workouts = const <Workout>[],
+    this.checkIns = const <DateTime, CheckIn>{},
+    this.customTrackers = const <CustomTracker>[],
+    this.customEntries = const <String, Map<DateTime, double>>{},
     this.runningTimer,
   });
 
@@ -52,6 +57,19 @@ class TrackerData {
   final List<FocusSession> focus;
   final List<Workout> workouts;
 
+  /// One mood-and-energy reading a day.
+  final Map<DateTime, CheckIn> checkIns;
+
+  /// User-defined trackers, in the order they were created.
+  final List<CustomTracker> customTrackers;
+
+  /// Custom tracker id → that tracker's day → value.
+  ///
+  /// Kept beside the definitions rather than inside them so that editing a
+  /// tracker's name or target is a cheap swap of one small object, instead of
+  /// rebuilding a map with a year of history in it.
+  final Map<String, Map<DateTime, double>> customEntries;
+
   /// A pomodoro left running, or null. Survives a restart; see [RunningTimer].
   final RunningTimer? runningTimer;
 
@@ -61,7 +79,16 @@ class TrackerData {
       reading.isEmpty &&
       food.isEmpty &&
       focus.isEmpty &&
-      workouts.isEmpty;
+      workouts.isEmpty &&
+      checkIns.isEmpty &&
+      customTrackers.isEmpty;
+
+  /// Custom trackers still in use, in list order.
+  List<CustomTracker> get activeCustomTrackers =>
+      customTrackers.where((t) => !t.archived).toList();
+
+  Map<DateTime, double> entriesFor(String trackerId) =>
+      customEntries[trackerId] ?? const <DateTime, double>{};
 
   TrackerData copyWith({
     TrackerGoals? goals,
@@ -72,6 +99,9 @@ class TrackerData {
     Map<DateTime, FoodDay>? food,
     List<FocusSession>? focus,
     List<Workout>? workouts,
+    Map<DateTime, CheckIn>? checkIns,
+    List<CustomTracker>? customTrackers,
+    Map<String, Map<DateTime, double>>? customEntries,
     RunningTimer? runningTimer,
     bool clearTimer = false,
   }) {
@@ -84,6 +114,9 @@ class TrackerData {
       food: food ?? this.food,
       focus: focus ?? this.focus,
       workouts: workouts ?? this.workouts,
+      checkIns: checkIns ?? this.checkIns,
+      customTrackers: customTrackers ?? this.customTrackers,
+      customEntries: customEntries ?? this.customEntries,
       runningTimer: clearTimer ? null : (runningTimer ?? this.runningTimer),
     );
   }
@@ -107,6 +140,18 @@ class TrackerData {
     },
     'focus': focus.map((s) => s.toJson()).toList(),
     'workouts': workouts.map((w) => w.toJson()).toList(),
+    'checkIns': <String, dynamic>{
+      for (final entry in checkIns.entries)
+        encodeDay(entry.key): entry.value.toJson(),
+    },
+    'customTrackers': customTrackers.map((t) => t.toJson()).toList(),
+    'customEntries': <String, dynamic>{
+      for (final tracker in customEntries.entries)
+        tracker.key: <String, double>{
+          for (final day in tracker.value.entries)
+            encodeDay(day.key): day.value,
+        },
+    },
     'runningTimer': runningTimer?.toJson(),
   };
 
@@ -153,6 +198,33 @@ class TrackerData {
       }
     }
 
+    final checkIns = <DateTime, CheckIn>{};
+    if (json['checkIns'] case final Map<dynamic, dynamic> raw) {
+      for (final entry in raw.entries) {
+        final day = decodeDay(entry.key as String?);
+        if (day == null || entry.value is! Map) continue;
+        final parsed = CheckIn.fromJson(
+          day,
+          Map<String, dynamic>.from(entry.value as Map),
+        );
+        if (parsed != null) checkIns[day] = parsed;
+      }
+    }
+
+    final customEntries = <String, Map<DateTime, double>>{};
+    if (json['customEntries'] case final Map<dynamic, dynamic> raw) {
+      for (final tracker in raw.entries) {
+        if (tracker.key is! String || tracker.value is! Map) continue;
+        final days = <DateTime, double>{};
+        for (final day in (tracker.value as Map).entries) {
+          final parsed = decodeDay(day.key as String?);
+          final value = (day.value as num?)?.toDouble();
+          if (parsed != null && value != null) days[parsed] = value;
+        }
+        if (days.isNotEmpty) customEntries[tracker.key as String] = days;
+      }
+    }
+
     return TrackerData(
       goals: json['goals'] is Map
           ? TrackerGoals.fromJson(
@@ -166,6 +238,9 @@ class TrackerData {
       food: food,
       focus: _list(json['focus'], FocusSession.fromJson),
       workouts: _list(json['workouts'], Workout.fromJson),
+      checkIns: checkIns,
+      customTrackers: _list(json['customTrackers'], CustomTracker.fromJson),
+      customEntries: customEntries,
       runningTimer: json['runningTimer'] is Map
           ? RunningTimer.fromJson(
               Map<String, dynamic>.from(json['runningTimer'] as Map),
@@ -194,7 +269,12 @@ class TrackerData {
 ///
 /// Versioned separately from the habit data because the two are written under
 /// different keys and can move independently.
-const int kTrackerSchemaVersion = 1;
+///
+/// - v1: the six built-in trackers and their goals.
+/// - v2: adds `checkIns`, `customTrackers` and `customEntries`. All three are
+///   additive and absent-means-empty, so v1 payloads decode under v2 with no
+///   migration branch.
+const int kTrackerSchemaVersion = 2;
 
 String encodeTrackers(TrackerData data) => jsonEncode(<String, dynamic>{
   'version': kTrackerSchemaVersion,

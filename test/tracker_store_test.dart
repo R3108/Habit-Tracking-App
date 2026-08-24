@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:habit_tracker/data/app_repository.dart';
 import 'package:habit_tracker/models/habit.dart';
+import 'package:habit_tracker/models/trackers/check_in_entry.dart';
+import 'package:habit_tracker/models/trackers/custom_tracker.dart';
 import 'package:habit_tracker/models/trackers/fitness_entry.dart';
 import 'package:habit_tracker/models/trackers/focus_entry.dart';
 import 'package:habit_tracker/models/trackers/food_entry.dart';
@@ -219,6 +221,125 @@ void main() {
     });
   });
 
+  group('the check-in', () {
+    test('logging then clearing leaves nothing behind', () async {
+      final store = await freshStore();
+      store.logCheckIn(CheckIn(day: today, mood: 4, energy: 2));
+
+      expect(store.checkInOn(today)!.mood, 4);
+
+      store.clearCheckIn(today);
+      expect(store.checkInOn(today), isNull);
+    });
+
+    test('a second entry for the same day replaces the first', () async {
+      final store = await freshStore();
+      store
+        ..logCheckIn(CheckIn(day: today, mood: 2, energy: 2))
+        ..logCheckIn(CheckIn(day: today, mood: 5, energy: 5));
+
+      expect(store.data.checkIns, hasLength(1));
+      expect(store.checkInOn(today)!.mood, 5);
+    });
+  });
+
+  group('custom trackers', () {
+    test('a new tracker starts with no history', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+        dailyTarget: 10000,
+        step: 1000,
+      );
+
+      expect(store.data.customTrackers, hasLength(1));
+      expect(store.customValueOn(tracker.id, today), 0);
+    });
+
+    test('adding accumulates through the day', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+        step: 1000,
+      );
+
+      store
+        ..addCustomValue(tracker.id, today, 1000)
+        ..addCustomValue(tracker.id, today, 500);
+
+      expect(store.customValueOn(tracker.id, today), 1500);
+    });
+
+    test('a recorded zero is kept, and only clearing removes the day', () async {
+      // The distinction is the whole point for a ceiling tracker: zero is the
+      // best possible day, and absence means the day was never answered.
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Coffees',
+        kind: CustomTrackerKind.count,
+        lowerIsBetter: true,
+      );
+
+      store.setCustomValue(tracker.id, today, 0);
+      expect(store.data.entriesFor(tracker.id).containsKey(today), isTrue);
+
+      store.clearCustomValue(tracker.id, today);
+      expect(store.data.entriesFor(tracker.id).containsKey(today), isFalse);
+    });
+
+    test('editing keeps the history', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+      );
+      store.addCustomValue(tracker.id, today, 8000);
+
+      store.updateCustomTracker(
+        tracker.copyWith(name: 'Daily steps', dailyTarget: 12000),
+      );
+
+      expect(store.customTrackerById(tracker.id)!.name, 'Daily steps');
+      expect(store.customValueOn(tracker.id, today), 8000);
+    });
+
+    test('deleting takes the history with it, and undo brings both back', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+      );
+      store.addCustomValue(tracker.id, today, 8000);
+
+      final removed = store.removeCustomTracker(tracker.id)!;
+      expect(store.data.customTrackers, isEmpty);
+      expect(store.data.entriesFor(tracker.id), isEmpty);
+
+      store.insertCustomTracker(
+        removed.index,
+        removed.tracker,
+        removed.entries,
+      );
+      expect(store.data.customTrackers, hasLength(1));
+      expect(store.customValueOn(tracker.id, today), 8000);
+    });
+
+    test('archiving hides a tracker without deleting it', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+      );
+
+      store.updateCustomTracker(tracker.copyWith(archived: true));
+
+      expect(store.data.activeCustomTrackers, isEmpty);
+      expect(store.customTrackerById(tracker.id), isNotNull);
+    });
+  });
+
   group('persistence', () {
     test('every tracker survives an encode and decode', () async {
       final store = await freshStore();
@@ -250,7 +371,19 @@ void main() {
           minutes: 40,
           intensity: Intensity.hard,
           note: 'Upper body',
+        )
+        ..logCheckIn(
+          CheckIn(day: today, mood: 4, energy: 2, note: 'Long day'),
         );
+
+      final custom = store.addCustomTracker(
+        name: 'Coffees',
+        kind: CustomTrackerKind.count,
+        dailyTarget: 2,
+        lowerIsBetter: true,
+        iconKey: 'food',
+      );
+      store.setCustomValue(custom.id, today, 1);
 
       final restored = decodeTrackers(encodeTrackers(store.data))!;
 
@@ -271,6 +404,40 @@ void main() {
       expect(restored.focus.single.tag, 'Maths');
       expect(restored.workouts.single.intensity, Intensity.hard);
       expect(restored.workouts.single.note, 'Upper body');
+      expect(restored.checkIns[today]!.mood, 4);
+      expect(restored.checkIns[today]!.note, 'Long day');
+      expect(restored.customTrackers.single.name, 'Coffees');
+      expect(restored.customTrackers.single.lowerIsBetter, isTrue);
+      expect(restored.customTrackers.single.iconKey, 'food');
+      expect(restored.entriesFor(custom.id)[today], 1);
+    });
+
+    test('a schema v1 blob still decodes under v2', () {
+      // Written before the check-in and custom trackers existed. All three new
+      // sections are absent-means-empty, so there is no migration branch.
+      const payload = '{"version":1,"trackers":{"water":{"2026-08-20":1500}}}';
+
+      final restored = decodeTrackers(payload)!;
+
+      expect(restored.water[DateTime(2026, 8, 20)], 1500);
+      expect(restored.checkIns, isEmpty);
+      expect(restored.customTrackers, isEmpty);
+      expect(restored.customEntries, isEmpty);
+    });
+
+    test('custom entries for a deleted tracker are dropped on read', () async {
+      final store = await freshStore();
+      final tracker = store.addCustomTracker(
+        name: 'Steps',
+        kind: CustomTrackerKind.count,
+      );
+      store.addCustomValue(tracker.id, today, 8000);
+      store.removeCustomTracker(tracker.id);
+
+      final restored = decodeTrackers(encodeTrackers(store.data))!;
+
+      expect(restored.customTrackers, isEmpty);
+      expect(restored.customEntries, isEmpty);
     });
 
     test('an empty snapshot round-trips to an empty snapshot', () {

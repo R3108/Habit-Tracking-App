@@ -10,6 +10,14 @@ import 'package:flutter/material.dart';
 /// Every [IconData] here is a compile-time constant, for the same tree-shaking
 /// reason [kHabitIcons] exists.
 enum TrackerKind {
+  /// First in the list on purpose: it is the one that takes two taps, and the
+  /// only one that records how the day actually went.
+  checkIn(
+    label: 'Check-in',
+    blurb: 'How the day felt, in two taps',
+    icon: Icons.mood,
+    color: Color(0xFFAD1457),
+  ),
   sleep(
     label: 'Sleep',
     blurb: 'Hours, regularity and sleep debt',

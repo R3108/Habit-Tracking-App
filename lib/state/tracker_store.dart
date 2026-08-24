@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../data/app_repository.dart';
 import '../models/habit.dart';
+import '../models/trackers/check_in_entry.dart';
+import '../models/trackers/custom_tracker.dart';
 import '../models/trackers/fitness_entry.dart';
 import '../models/trackers/focus_entry.dart';
 import '../models/trackers/food_entry.dart';
@@ -334,6 +336,160 @@ class TrackerStore extends ChangeNotifier {
     final next = <Workout>[..._data.workouts];
     next.insert(index.clamp(0, next.length), workout);
     _data = _data.copyWith(workouts: next);
+    _commit();
+  }
+
+  // ------------------------------------------------------------- check-in
+
+  CheckIn? checkInOn(DateTime day) => _data.checkIns[dateOnly(day)];
+
+  void logCheckIn(CheckIn entry) {
+    _data = _data.copyWith(
+      checkIns: <DateTime, CheckIn>{
+        ..._data.checkIns,
+        dateOnly(entry.day): entry,
+      },
+    );
+    _commit();
+  }
+
+  void clearCheckIn(DateTime day) {
+    final key = dateOnly(day);
+    if (!_data.checkIns.containsKey(key)) return;
+    _data = _data.copyWith(
+      checkIns: <DateTime, CheckIn>{..._data.checkIns}..remove(key),
+    );
+    _commit();
+  }
+
+  // ------------------------------------------------- custom trackers
+
+  CustomTracker? customTrackerById(String id) {
+    for (final tracker in _data.customTrackers) {
+      if (tracker.id == id) return tracker;
+    }
+    return null;
+  }
+
+  CustomTracker addCustomTracker({
+    required String name,
+    required CustomTrackerKind kind,
+    String iconKey = 'star',
+    int colorValue = 0xFF6A1B9A,
+    String unit = '',
+    int dailyTarget = 1,
+    int step = 1,
+    bool lowerIsBetter = false,
+  }) {
+    final tracker = CustomTracker(
+      id: _id('tracker'),
+      name: name.trim(),
+      kind: kind,
+      iconKey: iconKey,
+      colorValue: colorValue,
+      unit: unit.trim(),
+      dailyTarget: dailyTarget,
+      step: step,
+      lowerIsBetter: lowerIsBetter,
+    );
+    _data = _data.copyWith(
+      customTrackers: <CustomTracker>[..._data.customTrackers, tracker],
+    );
+    _commit();
+    return tracker;
+  }
+
+  void updateCustomTracker(CustomTracker tracker) {
+    final index = _data.customTrackers.indexWhere((t) => t.id == tracker.id);
+    if (index == -1) return;
+
+    final next = <CustomTracker>[..._data.customTrackers];
+    next[index] = tracker;
+    _data = _data.copyWith(customTrackers: next);
+    _commit();
+  }
+
+  /// Removes a tracker *and* its history, handing both back for an undo.
+  ///
+  /// The two travel together because putting the definition back without its
+  /// entries would restore an empty tracker and quietly lose the numbers —
+  /// which is a worse outcome than the delete the user asked for.
+  ({CustomTracker tracker, int index, Map<DateTime, double> entries})?
+  removeCustomTracker(String id) {
+    final index = _data.customTrackers.indexWhere((t) => t.id == id);
+    if (index == -1) return null;
+
+    final trackers = <CustomTracker>[..._data.customTrackers];
+    final removed = trackers.removeAt(index);
+    final entries = _data.entriesFor(id);
+
+    _data = _data.copyWith(
+      customTrackers: trackers,
+      customEntries: <String, Map<DateTime, double>>{..._data.customEntries}
+        ..remove(id),
+    );
+    _commit();
+    return (tracker: removed, index: index, entries: entries);
+  }
+
+  void insertCustomTracker(
+    int index,
+    CustomTracker tracker,
+    Map<DateTime, double> entries,
+  ) {
+    final trackers = <CustomTracker>[..._data.customTrackers];
+    trackers.insert(index.clamp(0, trackers.length), tracker);
+
+    _data = _data.copyWith(
+      customTrackers: trackers,
+      customEntries: <String, Map<DateTime, double>>{
+        ..._data.customEntries,
+        if (entries.isNotEmpty) tracker.id: entries,
+      },
+    );
+    _commit();
+  }
+
+  double customValueOn(String trackerId, DateTime day) =>
+      _data.entriesFor(trackerId)[dateOnly(day)] ?? 0;
+
+  void addCustomValue(String trackerId, DateTime day, double amount) {
+    final key = dateOnly(day);
+    setCustomValue(trackerId, key, customValueOn(trackerId, key) + amount);
+  }
+
+  void setCustomValue(String trackerId, DateTime day, double value) {
+    final key = dateOnly(day);
+    final next = <DateTime, double>{..._data.entriesFor(trackerId)};
+
+    // Zero is a real answer for a ceiling tracker — "no cigarettes today" is
+    // the best possible day — so only a negative clears the entry.
+    if (value < 0) {
+      next.remove(key);
+    } else {
+      next[key] = value;
+    }
+
+    _data = _data.copyWith(
+      customEntries: <String, Map<DateTime, double>>{
+        ..._data.customEntries,
+        trackerId: next,
+      },
+    );
+    _commit();
+  }
+
+  void clearCustomValue(String trackerId, DateTime day) {
+    final key = dateOnly(day);
+    final current = _data.entriesFor(trackerId);
+    if (!current.containsKey(key)) return;
+
+    _data = _data.copyWith(
+      customEntries: <String, Map<DateTime, double>>{
+        ..._data.customEntries,
+        trackerId: <DateTime, double>{...current}..remove(key),
+      },
+    );
     _commit();
   }
 

@@ -124,6 +124,57 @@ The interesting part of each is the metric a plain log cannot give you:
   until there is a month of history, because the ratio is meaningless without a
   baseline and inventing one is worse than admitting you don't know yet
 
+**Check-in** — mood and energy, 1–5 each.
+- The only thing here that measures how a day *went* rather than what was done,
+  which makes it the outcome everything else can be tested against
+- Five points, not ten: nobody can reliably tell a 6 from a 7 about their own
+  Tuesday, and a scale finer than the judgement behind it only adds noise
+- One tap is enough — the other half defaults to the middle
+
+**Your own trackers** — anything the six do not cover.
+- Four shapes: a count, a duration, an amount with a unit you name, or a 1–5
+  rating
+- **Lower is better** flips the target into a ceiling, for the things you want
+  less of. The progress bar empties as the number climbs, so a full bar always
+  means "good day" whichever direction the tracker runs
+- A day with no entry is *unknown*, not zero. For a ceiling tracker those are
+  opposites, and conflating them would score every unlogged day as perfect
+
+## Discoveries
+
+The six trackers, the check-in, your own trackers and the habit list all
+recorded different things in different shapes, and nothing could be compared
+with anything else until they shared a form. `DailySignal` is that form: a
+label, a unit, and a sparse day → value map. Sparse matters — an unlogged day is
+unknown, not zero, and treating it as zero would invent bad days that never
+happened.
+
+With that in place, every signal can be compared against every other:
+
+> On days your sleep was above 7h 10m, your mood averaged 4.2/5 — against
+> 2.8/5 on the rest. *Strong difference · 24 days compared.*
+
+A median split rather than a correlation coefficient, because nobody can
+sanity-check an *r* of 0.41 against their own memory and everybody can
+sanity-check "my good sleep days were better".
+
+This is an exploratory search, and the honest way to build one is to admit what
+that costs. With a dozen signals there are over a hundred ordered pairs; test
+them all loosely and a few will look striking by luck alone. Four things hold
+that down:
+
+1. A **medium effect size** is required — not mere statistical significance.
+2. Each unordered pair yields **at most one finding**, so the same relationship
+   cannot appear twice wearing different hats.
+3. The list is **capped**, so a quiet month cannot be padded out with the least
+   convincing results.
+4. **No time lags are tested.** "Did Monday's workout affect Tuesday's sleep" is
+   a genuinely interesting question, and adding it would double the comparisons
+   for one extra answer — a bad trade against false positives.
+
+What survives is a pattern in one person's logs, not a finding about people. The
+UI says so, and every string is phrased as an observation.
+
 **The rest**
 - Material 3 with six seed colours, light/dark/auto
 - Backup and restore as plain text, so data can move between devices — the
@@ -141,6 +192,8 @@ lib/
     momentum.dart           recency-weighted score, trend, risk, focus list
     synergy.dart            pairwise correlation between habits
     weekly_review.dart      the written seven-day summary
+    daily_signal.dart       one shape everything in the app can be read as
+    discovery.dart          the cross-tracker search built on it
     trackers/               one file per tracker: entry type + its metrics
       tracker_data.dart     the whole tracker snapshot, and its codec
       tracker_goals.dart    every target, plus duration/clock formatting
@@ -179,7 +232,8 @@ preference keys and can move separately:
 - `kSchemaVersion` (habits), currently **2**. v2 added `anchorId` and `skipped`;
   both are absent-means-default, so v1 payloads still decode without a migration
   branch.
-- `kTrackerSchemaVersion` (trackers), currently **1**.
+- `kTrackerSchemaVersion` (trackers), currently **2**. v2 added `checkIns`,
+  `customTrackers` and `customEntries`, all absent-means-empty.
 
 A backup carries both. The tracker section is optional and separately versioned,
 so a backup written before the trackers existed restores its habits and leaves
@@ -190,7 +244,7 @@ the logs alone — `BackupContents.trackers` is null in that case, and null mean
 
 ```bash
 flutter pub get
-flutter test          # 249 tests
+flutter test          # 311 tests
 flutter analyze       # clean
 flutter run
 ```
