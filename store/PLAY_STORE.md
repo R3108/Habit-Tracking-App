@@ -58,7 +58,7 @@ HabitFlow: Habit Tracker
 **Short description (80 max)**
 
 ```
-Private, offline habit tracker with streaks, reminders and clear progress.
+Offline habit tracker with sleep, water, food, focus and fitness built in.
 ```
 
 **Full description (4000 max)**
@@ -83,6 +83,14 @@ SEE THE WHOLE PICTURE
 • Completion rate by weekday, so you can see which day keeps tripping you up
 • Current and best streak, total completions and a 30-day success rate
 • Ten milestones to unlock as your history grows
+
+SIX BUILT-IN TRACKERS
+• Sleep — hours, bedtime regularity, sleep debt and weekend body-clock drift
+• Water — one tap per drink, plus whether you're ahead or behind for the hour
+• Reading — pages and minutes, a reading speed, and a finish date for your book
+• Food — meal times, your eating window, and balance without calorie counting
+• Focus — a Pomodoro timer, and where your deep work actually went
+• Fitness — active minutes, and whether this week is more than you're used to
 
 GENTLE REMINDERS
 Give any habit a time and HabitFlow will nudge you on the days it's due.
@@ -109,6 +117,30 @@ Answer as follows — all of it is verifiable from the source:
 | Does your app collect or share any user data? | **No** |
 | Is all user data encrypted in transit? | N/A (no data leaves the device) |
 | Do you provide a way to request data deletion? | **Yes** — Settings › Delete all data |
+
+### Health data — read this before submitting
+
+Since 1.1.0 the app stores sleep times, meals, and workouts. That is health and
+fitness data, and it changes what needs checking even though the answers above
+stay the same:
+
+- Play's data-safety form defines *collection* as transmitting data off the
+  device. Nothing here is transmitted, so **No** remains correct — but the claim
+  now covers health data, so the "no `INTERNET` permission" check below is more
+  load-bearing than it was. Re-run it every release.
+- The app touches **no** health platform: no Health Connect, no Google Fit, no
+  sensors, no `BODY_SENSORS`, no `ACTIVITY_RECOGNITION`. Every figure is typed in
+  by the user. The Health Connect declaration form therefore does not apply —
+  **verify this is still true** before each submission, because adding a step
+  counter or a Health Connect read would pull the app into that policy and
+  require the declaration form plus a demo video.
+- The category is already **Health & Fitness**, which is still right.
+- `PRIVACY_POLICY.md` enumerates the health data explicitly. Play checks the
+  policy against the form; keep the two in step.
+
+The app gives no medical advice and makes no diagnostic claim. The one place it
+comes close is the fitness screen's training-load ratio, which is worded as an
+observation about the user's own logged history rather than as guidance.
 
 The app makes no network requests. `INTERNET` is not declared in the app's own
 manifest; verify what the merged manifest ends up with before submitting:
@@ -187,7 +219,7 @@ URL — GitHub Pages is the least-effort option:
 
 Verified for 1.0.0 on 24 Aug 2026:
 
-- [x] `flutter test` — 65 passing
+- [x] `flutter test` — 249 passing
 - [x] `flutter analyze` — clean
 - [x] `flutter build appbundle --release` — `app-release.aab`, 50.3 MB
 - [x] Merged manifest declares no `INTERNET` permission

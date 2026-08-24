@@ -4,8 +4,9 @@ import '../util/haptics.dart';
 import 'home_screen.dart';
 import 'insights_screen.dart';
 import 'settings_screen.dart';
+import 'trackers/trackers_hub_screen.dart';
 
-/// Bottom-navigation container for the three top-level destinations.
+/// Bottom-navigation container for the four top-level destinations.
 ///
 /// An [IndexedStack] keeps each tab's scroll position and selected day alive
 /// across switches — coming back to Today and finding it reset to a blank
@@ -25,7 +26,12 @@ class _RootShellState extends State<RootShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [HomeScreen(), InsightsScreen(), SettingsScreen()],
+        children: const [
+          HomeScreen(),
+          TrackersHubScreen(),
+          InsightsScreen(),
+          SettingsScreen(),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -39,6 +45,11 @@ class _RootShellState extends State<RootShell> {
             icon: Icon(Icons.check_circle_outline),
             selectedIcon: Icon(Icons.check_circle),
             label: 'Today',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.monitor_heart_outlined),
+            selectedIcon: Icon(Icons.monitor_heart),
+            label: 'Trackers',
           ),
           NavigationDestination(
             icon: Icon(Icons.insights_outlined),

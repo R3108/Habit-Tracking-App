@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:habit_tracker/models/app_settings.dart';
 import 'package:habit_tracker/models/habit.dart';
+import 'package:habit_tracker/models/trackers/sleep_entry.dart';
+import 'package:habit_tracker/models/trackers/tracker_data.dart';
+import 'package:habit_tracker/models/trackers/tracker_goals.dart';
 import 'package:habit_tracker/services/backup_service.dart';
 
 /// Habits with real history, so the round-trip assertions have something to
@@ -103,6 +106,66 @@ void main() {
 
     expect(restored.last.anchorId, 'run');
     expect(restored.last.isSkippedOn(addDays(today, -3)), isTrue);
+  });
+
+  group('tracker data', () {
+    test('rides along with the habits and comes back intact', () {
+      final today = dateOnly(DateTime.now());
+      final trackers = TrackerData(
+        goals: const TrackerGoals(sleepMinutes: 450),
+        sleep: {
+          today: SleepEntry(
+            day: today,
+            bedMinutes: 23 * 60,
+            wakeMinutes: 6 * 60 + 30,
+            quality: 4,
+          ),
+        },
+        water: {today: 1750},
+      );
+
+      final restored = BackupService.import(
+        BackupService.export(
+          habits: fixtureHabits(),
+          settings: const AppSettings(),
+          trackers: trackers,
+        ),
+      );
+
+      expect(restored.trackers, isNotNull);
+      expect(restored.trackers!.goals.sleepMinutes, 450);
+      expect(restored.trackers!.water[today], 1750);
+      expect(restored.trackers!.sleep[today]!.durationMinutes, 450);
+    });
+
+    test('is absent, not empty, in a backup written before it existed', () {
+      // The distinction matters: the settings screen treats null as "leave the
+      // logs alone" and would otherwise wipe six trackers from an old export.
+      final restored = BackupService.import(
+        BackupService.export(
+          habits: fixtureHabits(),
+          settings: const AppSettings(),
+        ),
+      );
+
+      expect(restored.trackers, isNull);
+    });
+
+    test('a tracker section from a newer build is skipped, not fatal', () {
+      final payload = BackupService.export(
+        habits: fixtureHabits(),
+        settings: const AppSettings(),
+      ).replaceFirst(
+        '"settings"',
+        '"trackers": {"version": 999, "data": {}}, "settings"',
+      );
+
+      final restored = BackupService.import(payload);
+
+      // The habits in the same file are still perfectly readable.
+      expect(restored.habits, isNotEmpty);
+      expect(restored.trackers, isNull);
+    });
   });
 
   group('rejects', () {

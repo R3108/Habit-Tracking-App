@@ -1,10 +1,10 @@
 # Privacy Policy — HabitFlow
 
-**Last updated:** 23 August 2026
+**Last updated:** 24 August 2026
 
-HabitFlow (`com.riddhiman.habitflow`) is an offline habit tracker. This policy
-describes what the app does with your information. The short version: it keeps
-everything on your device and sends nothing anywhere.
+HabitFlow (`com.riddhiman.habitflow`) is an offline habit and wellbeing tracker.
+This policy describes what the app does with your information. The short
+version: it keeps everything on your device and sends nothing anywhere.
 
 ## What we collect
 
@@ -17,9 +17,26 @@ All of the following is written to your device's private app storage and never
 leaves it:
 
 - The habits you create — title, icon, colour, schedule, daily goal and note.
-- The days you have marked each habit complete.
+- The days you have marked each habit complete, and any days you marked as
+  planned time off.
+- Anything you enter into the six trackers:
+  - **Sleep** — the times you went to bed and woke, how you rated the night, and
+    any note.
+  - **Water** — how much you logged each day.
+  - **Reading** — book titles, pages and minutes.
+  - **Food** — the times you ate, which meal it was, the tags you picked and any
+    note. HabitFlow asks for no photographs and holds no food database.
+  - **Focus** — the length, time and label of each work session.
+  - **Fitness** — the type, duration and effort of each workout, and any note.
+- The targets you set for those trackers.
 - Your preferences — theme, accent colour, first day of the week, reminder and
   haptics settings.
+
+Some of this is health and fitness information. It is treated exactly like
+everything else in the app: written to your device's private app storage, read
+only by HabitFlow, and never transmitted. The app requests no access to Health
+Connect, Google Fit, Apple Health or any other health service, and reads nothing
+from your device's sensors — every figure comes from what you typed in.
 
 No other app can read this data. It is removed when you uninstall HabitFlow.
 
@@ -38,14 +55,16 @@ microphone, files, or any other sensitive data.
 
 Your data is never shared with anyone, including us.
 
-The **Back up data** feature copies your habits to your clipboard, and only when
-you explicitly ask it to. What you then do with that text — save it, send it to
-another device, paste it somewhere — is entirely your choice and outside the
-app's control.
+The **Back up data** feature copies your habits *and your tracker logs* to your
+clipboard, and only when you explicitly ask it to. That text therefore includes
+the health and fitness entries listed above. What you then do with it — save it,
+send it to another device, paste it somewhere — is entirely your choice and
+outside the app's control.
 
 ## Deleting your data
 
-- **Settings › Delete all data** erases every habit and all history immediately.
+- **Settings › Delete all data** erases every habit, all history and every
+  tracker log immediately.
 - Uninstalling HabitFlow removes everything the app has stored.
 
 There is nothing for us to delete on your behalf, because we never receive

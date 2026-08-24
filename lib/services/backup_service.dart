@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../data/app_repository.dart';
 import '../models/app_settings.dart';
 import '../models/habit.dart';
+import '../models/trackers/tracker_data.dart';
 
 /// Raised when a pasted backup isn't something this app wrote.
 class BackupFormatException implements Exception {
@@ -15,7 +16,15 @@ class BackupFormatException implements Exception {
 }
 
 /// What a decoded backup contains.
-typedef BackupContents = ({List<Habit> habits, AppSettings? settings});
+///
+/// [trackers] is null for a backup written before the trackers existed, which
+/// the caller must treat as "leave what is there" rather than as an instruction
+/// to wipe six logs.
+typedef BackupContents = ({
+  List<Habit> habits,
+  AppSettings? settings,
+  TrackerData? trackers,
+});
 
 /// Reads and writes the plain-text backup users move between devices.
 ///
@@ -31,6 +40,7 @@ abstract final class BackupService {
   static String export({
     required List<Habit> habits,
     required AppSettings settings,
+    TrackerData? trackers,
   }) {
     return const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
       'format': _magic,
@@ -38,6 +48,13 @@ abstract final class BackupService {
       'exportedAt': DateTime.now().toIso8601String(),
       'habits': habits.map((h) => h.toJson()).toList(),
       'settings': settings.toJson(),
+      // Carries its own version, so tracker data can change shape without
+      // touching the habit schema the surrounding envelope is stamped with.
+      if (trackers != null)
+        'trackers': <String, dynamic>{
+          'version': kTrackerSchemaVersion,
+          'data': trackers.toJson(),
+        },
     });
   }
 
@@ -112,6 +129,23 @@ abstract final class BackupService {
       }
     }
 
-    return (habits: habits, settings: settings);
+    TrackerData? trackers;
+    if (decoded['trackers'] case final Map<dynamic, dynamic> raw) {
+      final version = (raw['version'] as num?)?.toInt() ?? 0;
+      // A tracker section from a newer build is skipped rather than fatal: the
+      // habits in the same file are still perfectly readable, and refusing the
+      // whole restore over an optional section would be the wrong trade.
+      if (version <= kTrackerSchemaVersion && raw['data'] is Map) {
+        try {
+          trackers = TrackerData.fromJson(
+            Map<String, dynamic>.from(raw['data'] as Map),
+          );
+        } on Object {
+          trackers = null;
+        }
+      }
+    }
+
+    return (habits: habits, settings: settings, trackers: trackers);
   }
 }

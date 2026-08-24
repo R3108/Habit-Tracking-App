@@ -1,7 +1,8 @@
 # HabitFlow
 
-A private, offline habit tracker for Android. Habits, schedules and history live
-only on the device — no accounts, no servers, no analytics, no network calls.
+A private, offline habit and wellbeing tracker for Android. Habits, schedules,
+history and every tracker log live only on the device — no accounts, no servers,
+no analytics, no network calls.
 
 Package: `com.riddhiman.habitflow` · Flutter 3.47 · Dart 3.13
 
@@ -63,9 +64,70 @@ Package: `com.riddhiman.habitflow` · Flutter 3.47 · Dart 3.13
 - Scheduled *inexactly* on purpose, so the app needs no exact-alarm permission
 - Survive a reboot; a master switch pauses them without forgetting the times
 
+## The six trackers
+
+A second top-level tab. These are not habits with extra fields — each needs a
+shape the day-by-day tick model cannot express (two clock times, a book title, a
+set of meal tags), so each gets its own typed model and its own screen. They sit
+alongside the habit list rather than replacing any of it.
+
+The interesting part of each is the metric a plain log cannot give you:
+
+**Sleep** — bedtime, wake time, a quality rating.
+- Filed under the morning the night *ended*, so a 01:30 bedtime is not a skipped
+  night and two naps are not two nights
+- **Sleep debt** over 14 nights, floored per night: a ten-hour Sunday does not
+  repay a four-hour Tuesday
+- **Bedtime consistency**, 0–100, from the spread of bedtimes. Bedtimes either
+  side of midnight are mapped onto one continuous scale first — on a raw clock,
+  23:50 and 00:10 look twenty hours apart and wreck every average taken over them
+- **Social jetlag** — how far the midpoint of sleep shifts between work nights
+  and free nights. Reported only with at least two of each; one Saturday against
+  nine weekdays is an anecdote
+
+**Water** — one tap per drink, fixed sizes rather than a number pad.
+- **Pace**: how much a steady drinker would have had by *this hour*, spread over
+  07:00–23:00 rather than midnight to midnight
+- The only tracker here that judges a day before it ends, which is justified
+  because being 400 ml down at 3pm is fixable by 4pm
+
+**Reading** — book, pages, minutes.
+- Pages *and* minutes, because either alone says nothing: the two together give
+  a **reading speed** (pooled over timed sittings, so an untimed one cannot
+  inflate it)
+- Tell it how long a book is and it projects a **finish date** from your
+  pages-per-day — how fast you read matters far less than whether you open it
+
+**Food** — meal times and tags, no calorie counting.
+- A calorie count needs a food database, a network call and an account. What
+  somebody can answer honestly in three seconds at the table is whether there
+  were vegetables on the plate
+- **Eating window** from first meal to last — the number time-restricted eating
+  is actually about, and one nobody works out in their head
+- A coarse nourishing/indulgent balance. Deliberately coarse: a tracker precise
+  enough to argue with is one people start lying to
+
+**Focus** — a Pomodoro timer and the log of work it produces.
+- The timer stores a *start time*, not a countdown, so it survives the app being
+  killed and is still right when you come back
+- Only completed focus phases are recorded. Breaks are not work, and a session
+  abandoned after four minutes is not a pomodoro
+- Minutes per tag, so "where did the week go" has an answer
+
+**Fitness** — type, duration, effort.
+- **Active minutes** counts moderate and above only, because the weekly
+  guideline it is measured against is about moderate activity
+- Load is minutes × effort, so twenty minutes flat out and an hour's stroll do
+  not read as the same session
+- **Acute:chronic load ratio** — this week's load against the four-week weekly
+  average. Sharp jumps are where overuse injuries come from. Withheld entirely
+  until there is a month of history, because the ratio is meaningless without a
+  baseline and inventing one is worse than admitting you don't know yet
+
 **The rest**
 - Material 3 with six seed colours, light/dark/auto
-- Backup and restore as plain text, so data can move between devices
+- Backup and restore as plain text, so data can move between devices — the
+  backup carries the tracker logs too
 - Onboarding, haptics, week-start preference, full delete
 
 ## Project layout
@@ -79,13 +141,20 @@ lib/
     momentum.dart           recency-weighted score, trend, risk, focus list
     synergy.dart            pairwise correlation between habits
     weekly_review.dart      the written seven-day summary
+    trackers/               one file per tracker: entry type + its metrics
+      tracker_data.dart     the whole tracker snapshot, and its codec
+      tracker_goals.dart    every target, plus duration/clock formatting
+      tracker_kind.dart     which trackers exist, and how each presents itself
   screens/                  home, insights, detail, settings, archive,
                             onboarding, weekly review
+    trackers/               the hub, the six tracker screens, and targets
   services/                 notifications, backup encode/decode
-  state/                    HabitStore, SettingsStore (ChangeNotifier + scopes)
+  state/                    HabitStore, SettingsStore, TrackerStore
+                            (ChangeNotifier + scopes)
   theme/app_theme.dart      Material 3 theme from a seed colour
   util/haptics.dart         feedback that respects the user's setting
   widgets/                  cards, pickers, heatmap, charts, calendar, focus
+    trackers/               ring, mini bar chart, card, stat row, empty state
 ```
 
 Rules the code sticks to:
@@ -104,15 +173,24 @@ Rules the code sticks to:
   the review are computed from `entries` on every read, so restoring a backup
   lights up exactly what the history has earned and nothing can drift.
 
-The on-disk schema is versioned (`kSchemaVersion`, currently 2). v2 added
-`anchorId` and `skipped`; both are absent-means-default, so v1 payloads still
-decode without a migration branch.
+Two on-disk schemas, versioned independently because they live under different
+preference keys and can move separately:
+
+- `kSchemaVersion` (habits), currently **2**. v2 added `anchorId` and `skipped`;
+  both are absent-means-default, so v1 payloads still decode without a migration
+  branch.
+- `kTrackerSchemaVersion` (trackers), currently **1**.
+
+A backup carries both. The tracker section is optional and separately versioned,
+so a backup written before the trackers existed restores its habits and leaves
+the logs alone — `BackupContents.trackers` is null in that case, and null means
+"leave what is there", never "wipe six trackers".
 
 ## Running it
 
 ```bash
 flutter pub get
-flutter test          # 156 tests
+flutter test          # 249 tests
 flutter analyze       # clean
 flutter run
 ```

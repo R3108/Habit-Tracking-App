@@ -9,6 +9,22 @@ import 'habit_icons.dart';
 /// can land on 23:00 the previous day.
 DateTime dateOnly(DateTime day) => DateTime(day.year, day.month, day.day);
 
+/// Formats [day] as `YYYY-MM-DD`, the on-disk form of a date.
+///
+/// Shared with the trackers so every stored day in the app parses the same way,
+/// and so a hand-edited backup reads as dates rather than epoch integers.
+String encodeDay(DateTime day) =>
+    '${day.year.toString().padLeft(4, '0')}-'
+    '${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
+
+/// Reads a day written by [encodeDay], or null if it is unreadable.
+DateTime? decodeDay(String? raw) {
+  if (raw == null) return null;
+  final parsed = DateTime.tryParse(raw);
+  return parsed == null ? null : dateOnly(parsed);
+}
+
 /// Moves [day] by whole calendar days.
 ///
 /// Prefer this over `add(Duration(days: n))`: on the morning the clocks go
@@ -568,16 +584,9 @@ class Habit {
     );
   }
 
-  static String _encodeDay(DateTime day) =>
-      '${day.year.toString().padLeft(4, '0')}-'
-      '${day.month.toString().padLeft(2, '0')}-'
-      '${day.day.toString().padLeft(2, '0')}';
+  static String _encodeDay(DateTime day) => encodeDay(day);
 
-  static DateTime? _decodeDay(String? raw) {
-    if (raw == null) return null;
-    final parsed = DateTime.tryParse(raw);
-    return parsed == null ? null : dateOnly(parsed);
-  }
+  static DateTime? _decodeDay(String? raw) => decodeDay(raw);
 }
 
 /// The first day of the week containing [day].

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
 import '../models/habit.dart';
+import '../models/trackers/tracker_data.dart';
 
 /// Current on-disk schema version.
 ///
@@ -33,6 +34,12 @@ abstract class AppRepository {
   Future<AppSettings?> loadSettings();
 
   Future<void> saveSettings(AppSettings settings);
+
+  /// Returns null when no tracker has ever been used, which is how the hub
+  /// tells a fresh install from someone who cleared their logs.
+  Future<TrackerData?> loadTrackers();
+
+  Future<void> saveTrackers(TrackerData trackers);
 
   Future<void> clear();
 }
@@ -84,6 +91,7 @@ class SharedPreferencesAppRepository implements AppRepository {
 
   static const _habitsKey = 'habitflow.habits';
   static const _settingsKey = 'habitflow.settings';
+  static const _trackersKey = 'habitflow.trackers';
 
   /// Injected in tests; resolved lazily on the first read otherwise.
   SharedPreferences? preferences;
@@ -125,20 +133,34 @@ class SharedPreferencesAppRepository implements AppRepository {
   }
 
   @override
+  Future<TrackerData?> loadTrackers() async {
+    final prefs = await _prefs;
+    return decodeTrackers(prefs.getString(_trackersKey));
+  }
+
+  @override
+  Future<void> saveTrackers(TrackerData trackers) async {
+    final prefs = await _prefs;
+    await prefs.setString(_trackersKey, encodeTrackers(trackers));
+  }
+
+  @override
   Future<void> clear() async {
     final prefs = await _prefs;
     await prefs.remove(_habitsKey);
     await prefs.remove(_settingsKey);
+    await prefs.remove(_trackersKey);
   }
 }
 
 /// Volatile repository for tests, widget previews and the demo seed.
 class InMemoryAppRepository implements AppRepository {
-  InMemoryAppRepository({this.habits, this.settings});
+  InMemoryAppRepository({this.habits, this.settings, this.trackers});
 
   /// Public so a test can assert on what the store wrote.
   List<Habit>? habits;
   AppSettings? settings;
+  TrackerData? trackers;
 
   @override
   Future<List<Habit>?> loadHabits() async => habits;
@@ -153,8 +175,15 @@ class InMemoryAppRepository implements AppRepository {
   Future<void> saveSettings(AppSettings value) async => settings = value;
 
   @override
+  Future<TrackerData?> loadTrackers() async => trackers;
+
+  @override
+  Future<void> saveTrackers(TrackerData value) async => trackers = value;
+
+  @override
   Future<void> clear() async {
     habits = null;
     settings = null;
+    trackers = null;
   }
 }
