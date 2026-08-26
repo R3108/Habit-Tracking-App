@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/achievement.dart';
+import '../models/blueprint.dart';
 import '../models/daily_signal.dart';
 import '../models/discovery.dart';
 import '../models/habit.dart';
@@ -11,8 +12,10 @@ import '../state/habit_store.dart';
 import '../state/settings_store.dart';
 import '../state/tracker_store.dart';
 import '../widgets/heatmap.dart';
+import '../widgets/section_card.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/weekday_chart.dart';
+import 'coach_screen.dart';
 import 'habit_detail_screen.dart';
 import 'weekly_review_screen.dart';
 
@@ -36,12 +39,14 @@ class InsightsScreen extends StatelessWidget {
 
     final insights = OverallInsights.from(habits);
     final synergies = findSynergies(habits);
-    final discoveries = findDiscoveries(
-      buildSignals(
-        habits: habits,
-        trackers: TrackerScope.of(context).data,
-      ),
+    // One walk over the trackers feeds both searches: the pairwise one, and the
+    // profile of the days that went best.
+    final signals = buildSignals(
+      habits: habits,
+      trackers: TrackerScope.of(context).data,
     );
+    final discoveries = findDiscoveries(signals);
+    final blueprint = DayBlueprint.from(signals);
 
     return Scaffold(
       body: CustomScrollView(
@@ -51,11 +56,23 @@ class InsightsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
             sliver: SliverList.list(
               children: [
-                _ReviewBanner(
+                _Banner(
+                  icon: Icons.auto_stories_outlined,
+                  title: 'Weekly review',
+                  subtitle: 'What the last seven days actually say',
                   onOpen: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const WeeklyReviewScreen(),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _Banner(
+                  icon: Icons.auto_awesome,
+                  title: 'Coach',
+                  subtitle: "Today's odds, and where the plan is wrong",
+                  onOpen: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const CoachScreen()),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -90,7 +107,7 @@ class InsightsScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 24),
-                _Section(
+                SectionCard(
                   title: 'Consistency',
                   subtitle: 'Every day since ${DateFormat.MMMd().format(insights.days.first.day)}',
                   child: Column(
@@ -107,7 +124,7 @@ class InsightsScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _Section(
+                SectionCard(
                   title: 'By weekday',
                   subtitle: 'Where the misses cluster',
                   child: WeekdayChart(
@@ -118,7 +135,7 @@ class InsightsScreen extends StatelessWidget {
                 ),
                 if (discoveries.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  _Section(
+                  SectionCard(
                     title: 'Discoveries',
                     subtitle: 'What your trackers say about each other',
                     child: Column(
@@ -140,9 +157,17 @@ class InsightsScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (blueprint != null) ...[
+                  const SizedBox(height: 16),
+                  SectionCard(
+                    title: 'Blueprint of a good day',
+                    subtitle: 'What your best days had in common',
+                    child: _BlueprintBody(blueprint: blueprint),
+                  ),
+                ],
                 if (synergies.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  _Section(
+                  SectionCard(
                     title: 'Connections',
                     subtitle: 'Habits that move together',
                     child: Column(
@@ -166,7 +191,7 @@ class InsightsScreen extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 16),
-                _Section(
+                SectionCard(
                   title: 'Habits',
                   subtitle: 'Last 30 days',
                   child: Column(
@@ -185,7 +210,7 @@ class InsightsScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _Section(
+                SectionCard(
                   title: 'Milestones',
                   subtitle:
                       '${kAchievements.where((a) => a.isUnlocked(insights)).length}'
@@ -217,10 +242,18 @@ class InsightsScreen extends StatelessWidget {
   }
 }
 
-/// Entry point to the written review, at the top where it will be seen.
-class _ReviewBanner extends StatelessWidget {
-  const _ReviewBanner({required this.onOpen});
+/// Entry point to one of the written screens, at the top where it will be seen.
+class _Banner extends StatelessWidget {
+  const _Banner({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onOpen,
+  });
 
+  final IconData icon;
+  final String title;
+  final String subtitle;
   final VoidCallback onOpen;
 
   @override
@@ -238,17 +271,14 @@ class _ReviewBanner extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(
-                Icons.auto_stories_outlined,
-                color: scheme.onSecondaryContainer,
-              ),
+              Icon(icon, color: scheme.onSecondaryContainer),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Weekly review',
+                      title,
                       style: textTheme.titleSmall?.copyWith(
                         color: scheme.onSecondaryContainer,
                         fontWeight: FontWeight.w700,
@@ -256,7 +286,7 @@ class _ReviewBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'What the last seven days actually say',
+                      subtitle,
                       style: textTheme.bodySmall?.copyWith(
                         color: scheme.onSecondaryContainer.withValues(
                           alpha: 0.85,
@@ -436,51 +466,80 @@ class _SynergyRow extends StatelessWidget {
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.child,
-    this.subtitle,
-  });
+/// The profile of the days that went best, read as a recipe.
+class _BlueprintBody extends StatelessWidget {
+  const _BlueprintBody({required this.blueprint});
 
-  final String title;
-  final String? subtitle;
-  final Widget child;
+  final DayBlueprint blueprint;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final outcome = blueprint.outcome;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your best ${blueprint.goodDays} days averaged '
+          '${outcome.format(blueprint.goodOutcome)} '
+          '${outcome.label.toLowerCase()}, against '
+          '${outcome.format(blueprint.poorOutcome)} on the '
+          '${blueprint.poorDays} worst. This is what else was different:',
+          style: textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        for (final line in blueprint.lines)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  line.higherIsBetter
+                      ? Icons.arrow_upward
+                      : Icons.arrow_downward,
+                  size: 20,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        line.target,
+                        style: textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Median ${line.signal.format(line.goodMedian)} on the '
+                        'good days against '
+                        '${line.signal.format(line.poorMedian)} on the poor '
+                        'ones · ${line.goodDays} and ${line.poorDays} days',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              subtitle!,
-              style: textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
+        Text(
+          'The target is the level three quarters of your good days cleared, '
+          'not their average — an average target is one half your own best '
+          'days would have failed. Comparing extremes flatters every gap it '
+          'finds, so read this as a shape rather than a measurement, and note '
+          'that a good day can cause an early night as easily as the other way '
+          'round.',
+          style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }

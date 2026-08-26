@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/forecast.dart';
 import '../models/habit.dart';
 import '../models/momentum.dart';
 import '../state/habit_store.dart';
@@ -9,6 +10,7 @@ import '../widgets/day_selector.dart';
 import '../widgets/focus_card.dart';
 import '../widgets/habit_card.dart';
 import '../widgets/habit_editor_sheet.dart';
+import 'coach_screen.dart';
 import 'habit_detail_screen.dart';
 
 /// The daily checklist.
@@ -78,6 +80,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openCoach() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const CoachScreen()),
+    );
+  }
+
   void _archiveHabit(HabitStore store, Habit habit) {
     store.setArchived(habit.id, true);
     _notify(
@@ -140,6 +148,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final isToday = _selectedDay == dateOnly(DateTime.now());
     final focus = isToday ? focusList(store.habits) : const <HabitMomentum>[];
 
+    // The coach's own screen recomputes everything; this is only the headline,
+    // which is the cheap half — a hundred-odd day lookups per habit.
+    final forecast = isToday && store.habits.isNotEmpty
+        ? DayForecast.build(store.habits)
+        : null;
+
     // Summarising a list the user can already see whole is just the list
     // printed twice, and every focus row repeats a card a few pixels below it.
     // On a short list the card has to earn its place: a streak actually on the
@@ -177,6 +191,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     onPressed: () =>
                         setState(() => _selectedDay = dateOnly(DateTime.now())),
                   ),
+                if (store.habits.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    tooltip: 'Coach',
+                    onPressed: _openCoach,
+                  ),
                 if (store.habits.length > 1)
                   IconButton(
                     icon: const Icon(Icons.swap_vert),
@@ -197,6 +217,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       day: _selectedDay,
                       completed: completed,
                       total: due.length,
+                      forecast: forecast,
+                      onOpenCoach: _openCoach,
                     ),
                     const SizedBox(height: 20),
                     DaySelector(
@@ -367,17 +389,31 @@ class _ReorderTile extends StatelessWidget {
   }
 }
 
-/// Headline card: how much of the selected day is done.
+/// Headline card: how much of the selected day is done, and how it is likely
+/// to end.
+///
+/// The forecast rides along inside this card rather than getting one of its
+/// own. A block above the checklist is a block between the user and the thing
+/// the app is for, and one line of "about four of five by tonight" is the whole
+/// of what belongs on this screen anyway — the reasoning behind it lives a tap
+/// away, on the coach.
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.day,
     required this.completed,
     required this.total,
+    this.forecast,
+    this.onOpenCoach,
   });
 
   final DateTime day;
   final int completed;
   final int total;
+
+  /// Null when the user is looking at another day, where a forecast would be
+  /// a prediction about the past.
+  final DayForecast? forecast;
+  final VoidCallback? onOpenCoach;
 
   String get _dayLabel {
     final today = dateOnly(DateTime.now());
@@ -394,13 +430,27 @@ class _SummaryCard extends StatelessWidget {
     return '$completed of $total complete';
   }
 
+  /// The forecast in one line, or null when there is nothing worth saying.
+  ///
+  /// Silent until the model has enough history: "still learning" on the busiest
+  /// card in the app is a line that never earns its pixels.
+  String? get _outlook {
+    final forecast = this.forecast;
+    if (forecast == null || forecast.isEmpty) return null;
+    if (!forecast.isReliable) return null;
+    if (forecast.done == forecast.due) return null;
+    return 'History says about ${forecast.expectedRounded} of '
+        '${forecast.due} by tonight';
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final progress = total == 0 ? 0.0 : completed / total;
+    final outlook = _outlook;
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
@@ -426,6 +476,29 @@ class _SummaryCard extends StatelessWidget {
                     color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
                   ),
                 ),
+                if (outlook != null) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          outlook,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: scheme.onPrimaryContainer.withValues(
+                              alpha: 0.8,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -463,6 +536,22 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+
+    // The whole card is the way in to the coach, and only while there is a
+    // forecast on it: a tap target that appears and disappears is bad, but a
+    // card that silently swallows taps and goes nowhere is worse.
+    final onOpenCoach = this.onOpenCoach;
+    if (outlook == null || onOpenCoach == null) return card;
+
+    return Semantics(
+      button: true,
+      label: 'Open coach',
+      child: InkWell(
+        onTap: onOpenCoach,
+        borderRadius: BorderRadius.circular(20),
+        child: card,
       ),
     );
   }

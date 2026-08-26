@@ -155,11 +155,27 @@ changes what needs checking even though the answers above stay the same:
   change — but it is one more reason the "no `INTERNET` permission" check is the
   load-bearing one.
 
-The app gives no medical advice and makes no diagnostic claim. Two places come
-closest and are worded as observations about the user's own logged history
-rather than as guidance: the fitness screen's training-load ratio, and the
-Discoveries section on Insights, which also states in the UI that its findings
-are searched correlations rather than facts.
+The app gives no medical advice and makes no diagnostic claim. Four places come
+closest, and each is worded as an observation about the user's own logged history
+rather than as guidance: the fitness screen's training-load ratio; the Discoveries
+section on Insights, which states in the UI that its findings are searched
+correlations rather than facts; the Blueprint section, which says the same and
+adds that the comparison flatters the gaps it finds; and the Coach.
+
+The Coach needs the closest reading of the four, because it is the one screen
+that *proposes* something. It suggests changes to a habit's schedule and to the
+tracker targets the user set. Both are the user's own plan rather than
+anything clinical — no target it touches is a health recommendation the app
+invented, and the numbers it proposes come from that user's own last month — but
+the wording matters:
+
+- Every suggestion states the evidence, in the user's own figures.
+- Nothing is ever applied automatically. Each change takes a tap and offers an
+  undo, and the screen says so.
+- The targets section never proposes a number outside the same clamps the manual
+  target editor enforces, so it cannot suggest, say, a four-hour night.
+
+Re-read those strings before each submission if they change.
 
 The app makes no network requests. `INTERNET` is not declared in the app's own
 manifest; verify what the merged manifest ends up with before submitting:

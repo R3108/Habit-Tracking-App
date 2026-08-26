@@ -59,6 +59,12 @@ Package: `com.riddhiman.habitflow` · Flutter 3.47 · Dart 3.13
   otherwise every Monday morning compares two days against seven and reports a
   collapse
 
+**The coach** — see [below](#the-coach) for how each part works
+- Odds for every habit due today, fitted per habit from its own history
+- A written briefing that puts the thing decided *today* at the top
+- Concrete schedule changes, and retuned tracker targets, applied in one tap
+- A profile of what your best days had in common
+
 **Reminders**
 - Per-habit reminder times, repeated on that habit's scheduled weekdays
 - Scheduled *inexactly* on purpose, so the app needs no exact-alarm permission
@@ -175,6 +181,94 @@ that down:
 What survives is a pattern in one person's logs, not a finding about people. The
 UI says so, and every string is phrased as an observation.
 
+## The coach
+
+Its own screen, reached from Today and from Insights. Five things feed it, all
+computed on the device from the logs you already keep. Nothing here is generated
+prose in the language-model sense — every sentence is assembled from numbers, on
+a phone, offline, which is the only way a briefing can be both private and true.
+
+**1. Today's odds** — a small naive-Bayes model per habit, fitted on every read.
+
+It starts from a recency-weighted base rate (half-life a fortnight) and adds one
+log-odds term per condition that holds today:
+
+- the weekday — *"Thursdays run at 31% across 17 of them"*
+- what happened the last day it was due, which is the one thing no chart shows:
+  for some people a miss is a blip, for others it is the first domino
+- whether its stack cue has already fired — counted only once it *has*, because
+  an anchor still unticked at noon says nothing
+
+Three guards keep it honest. Every term is **shrunk toward the base rate**, so a
+condition seen four times contributes almost nothing and one seen thirty
+contributes nearly its full weight. Every term is **clamped**, so no single
+coincidence can swing the answer on its own. And the result **never reaches 0 or
+100%** — people break their patterns, which is rather the point of tracking them.
+
+Summed across the list it gives the line on Today: *about four of five by
+tonight*. An expected count is the sum of the individual probabilities, which
+holds whether or not the habits are independent — expectation is linear either
+way.
+
+**2. The briefing** — the four engines below, ordered.
+
+Each one answers a narrow question well and none of them answers the one people
+actually open the app with: *what should I do about today?* The ordering rule is
+what makes it useful — **things that are decided today come first.** A streak
+that breaks tonight outranks a mis-set target, however wrong the target is.
+
+**3. Schedule changes** — the only part of the app that proposes, rather than
+describes.
+
+Three rules, one suggestion per habit, each applied in a tap and undoable:
+
+- **Drop a weekday** when one is far below the rest and has a dozen chances
+  behind it: *"Fridays run at 8% against 79% on your other days."*
+- **Switch to a quota** when the habit happens often enough but never on a
+  predictable day. The case this exists for is someone who genuinely goes to the
+  gym four times most weeks, has five fixed days scheduled, and reads as a 70%
+  failure forever. A quota is not a lower standard — it is the standard they are
+  already meeting, written down accurately.
+- **Ease or raise a quota** that the median week has been clear of in either
+  direction for six weeks.
+
+A schedule change moves what the app *expects*, not what you do: ease a quota and
+tomorrow's percentage rises without a single extra thing being done. That is
+worth doing when the plan is wrong, and worth knowing you did — so the screen
+says it, and every suggestion names the trade.
+
+**4. Targets** — the tracker goals, checked against what actually happened.
+
+The defaults are public-health numbers: eight hours, two litres, a hundred and
+fifty minutes. A fine place to start and a poor place to stay. A target nobody
+reaches stops being a target and becomes a daily reminder of failing; one that is
+cleared without noticing has quietly stopped asking for anything.
+
+One rule produces both directions: the proposal is always **the level you would
+have met on about six days in ten** — the 40th percentile of what you logged, or
+the 60th for a ceiling like the eating window. Whether that is a step down or a
+step up is a fact about the history, not a judgement about you.
+
+**5. Blueprint of a good day** — a profile, where Discoveries is a pairing.
+
+Discoveries asks "does sleep move mood?" one pair at a time. This asks the
+question people actually have: *what does a good day look like for me?* It takes
+the best third of days by habits kept, the worst third, and reports every other
+signal that separates them:
+
+> **Sleep above 7h 5m** — median 7h 40m on the good days against 6h 20m on the
+> poor ones · 14 and 13 days
+
+The target is the good days' *lower quartile*, not their median: a median target
+is one half your own best days would have failed. Only things you control are
+profiled — mood being higher on the days more habits got done is true, circular
+and no use to anybody.
+
+Comparing extremes flatters every gap it finds, so the threshold for a line is
+stricter than the discovery search's, and the screen says to read it as a shape
+rather than a measurement. It is also, as ever, correlation: a good day can cause
+an early night as easily as the other way round.
+
 **The rest**
 - Material 3 with six seed colours, light/dark/auto
 - Backup and restore as plain text, so data can move between devices — the
@@ -194,12 +288,17 @@ lib/
     weekly_review.dart      the written seven-day summary
     daily_signal.dart       one shape everything in the app can be read as
     discovery.dart          the cross-tracker search built on it
+    blueprint.dart          what the best days had in common, built on it too
+    forecast.dart           the per-habit odds model, and the day's expectation
+    schedule_coach.dart     schedule changes the history argues for
+    goal_coach.dart         tracker targets retuned to what is being hit
+    briefing.dart           all of the above, ordered into a paragraph
     trackers/               one file per tracker: entry type + its metrics
       tracker_data.dart     the whole tracker snapshot, and its codec
       tracker_goals.dart    every target, plus duration/clock formatting
       tracker_kind.dart     which trackers exist, and how each presents itself
   screens/                  home, insights, detail, settings, archive,
-                            onboarding, weekly review
+                            onboarding, weekly review, coach
     trackers/               the hub, the six tracker screens, and targets
   services/                 notifications, backup encode/decode
   state/                    HabitStore, SettingsStore, TrackerStore
@@ -222,9 +321,15 @@ Rules the code sticks to:
   planned it off — and every caller wants all three. `HabitSchedule.isDueOn`
   answers only the middle one, and reaching for it directly is how a day off
   ends up counted as a miss.
-- **Analytics are derived, never stored.** Momentum, correlations, badges and
-  the review are computed from `entries` on every read, so restoring a backup
-  lights up exactly what the history has earned and nothing can drift.
+- **Analytics are derived, never stored.** Momentum, correlations, badges, the
+  review and every forecast are computed from `entries` on every read, so
+  restoring a backup lights up exactly what the history has earned and nothing
+  can drift. The forecast model in particular is *fitted* on each read rather
+  than trained and saved: there are no weights to persist, migrate or corrupt,
+  and no way for a stale model to outlive the history it came from.
+- **Nothing changes itself.** The coach proposes schedule and target changes and
+  never applies one. A tracker that quietly lowered your goals overnight would be
+  a tracker whose numbers meant nothing.
 
 Two on-disk schemas, versioned independently because they live under different
 preference keys and can move separately:
@@ -244,7 +349,7 @@ the logs alone — `BackupContents.trackers` is null in that case, and null mean
 
 ```bash
 flutter pub get
-flutter test          # 311 tests
+flutter test          # 389 tests
 flutter analyze       # clean
 flutter run
 ```
