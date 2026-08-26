@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../app_info.dart';
 import '../services/backup_service.dart';
+import '../state/experiment_store.dart';
 import '../state/habit_store.dart';
 import '../state/settings_store.dart';
 import '../state/tracker_store.dart';
@@ -200,6 +201,7 @@ class SettingsScreen extends StatelessWidget {
       habits: HabitScope.of(context).allHabits,
       settings: SettingsScope.of(context).settings,
       trackers: TrackerScope.of(context).data,
+      experiments: ExperimentScope.of(context).all,
     );
 
     if (!context.mounted) return;
@@ -271,6 +273,7 @@ class SettingsScreen extends StatelessWidget {
     final habitStore = HabitScope.of(context);
     final settingsStore = SettingsScope.of(context);
     final trackerStore = TrackerScope.of(context);
+    final experimentStore = ExperimentScope.of(context);
 
     final raw = await showDialog<String>(
       context: context,
@@ -325,6 +328,12 @@ class SettingsScreen extends StatelessWidget {
       if (contents.trackers != null) {
         trackerStore.replaceAll(contents.trackers!);
       }
+      // Same reading for the experiment log: absent means "written before the
+      // lab existed", which must not be allowed to wipe a running trial.
+      if (contents.experiments != null) {
+        experimentStore.replaceAll(contents.experiments!);
+        experimentStore.pruneOrphans(contents.habits);
+      }
       if (contents.settings != null) {
         // Onboarding is a property of this install, not of the backup.
         await settingsStore.update(
@@ -350,15 +359,16 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _confirmWipe(BuildContext context) async {
     final habitStore = HabitScope.of(context);
     final trackerStore = TrackerScope.of(context);
+    final experimentStore = ExperimentScope.of(context);
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete all data?'),
         content: const Text(
-          'Every habit, all of its history, and every tracker log — sleep, '
-          'water, reading, food, focus and fitness — is removed from this '
-          'device. This cannot be undone.',
+          'Every habit, all of its history, every tracker log — sleep, '
+          'water, reading, food, focus and fitness — and every experiment is '
+          'removed from this device. This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -379,6 +389,7 @@ class SettingsScreen extends StatelessWidget {
     if (confirmed != true) return;
     await habitStore.clearAll();
     await trackerStore.clearAll();
+    await experimentStore.clearAll();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()

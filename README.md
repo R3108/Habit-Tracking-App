@@ -269,11 +269,116 @@ stricter than the discovery search's, and the screen says to read it as a shape
 rather than a measurement. It is also, as ever, correlation: a good day can cause
 an early night as easily as the other way round.
 
+**The lab**
+- **Habit strength** — how ingrained each habit is, from consistency, recovery
+  after a miss, time practised and evenness across the week
+- **Projections** — a two-state Markov chain simulated forward, for streak odds
+  and milestone arrivals rather than a single day's chance
+- **Turning points** — change-point detection over the history, for the dates a
+  habit genuinely changed level
+- **Daily load** — what you actually finish as a function of how much you take
+  on, and whether the last habit added is costing the others
+- **Experiments** — a change declared in advance, judged against the stretch
+  before it, with a window that cannot be moved once it starts
+
 **The rest**
 - Material 3 with six seed colours, light/dark/auto
 - Backup and restore as plain text, so data can move between devices — the
-  backup carries the tracker logs too
+  backup carries the tracker logs and the experiment log too
 - Onboarding, haptics, week-start preference, full delete
+
+## The lab
+
+Its own screen, reached from Insights. The coach is about today; everything here
+is about the arc a habit is on over months, which is a different reading pace and
+does not belong interleaved with it.
+
+**1. Habit strength** — how ingrained a habit is, which is not how it went lately.
+
+Momentum already answers *"is this slipping right now"*. This answers the slower
+question underneath it: *if next month got difficult, would this survive?* Those
+come apart constantly — a habit kept flawlessly for eleven days has excellent
+momentum and no strength, and a two-year habit having a shaky fortnight has the
+reverse. Four components, reported separately because the total is only useful as
+a way into whichever one is dragging it down:
+
+- **consistency**, recency-weighted with a 45-day half-life — deliberately much
+  slower than momentum's ten, or this would just be momentum again
+- **resilience** — of the due days that followed a miss, how many were kept
+- **tenure**, on a saturating curve scaled to 66 days (the median in Lally et
+  al. 2010, the study the "21 days" claim is a mangling of — used to set the
+  curve's shape, never quoted at you as a deadline)
+- **regularity** — evenness across the weekdays the habit is actually due
+
+Resilience is the one that earns its place. A 90% habit whose misses arrive in
+runs is one bad week from being a 40% habit, and it reads as perfectly healthy
+right up until it isn't: *"kept 87% of the time, but only 34% of the days after a
+miss — one slip tends to become a run."* No average can show that.
+
+**2. Projections** — where a habit is heading, simulated rather than averaged.
+
+Streaks are path-dependent, so an average cannot answer questions about them. A
+habit kept 80% of the time reaches a 30-day streak readily if its misses are
+isolated and almost never if they cluster, and those two histories have identical
+completion rates. So the simulation is a **two-state Markov chain**: the chance of
+keeping the habit depends on whether the last due day was kept. Both rates are
+fitted from the habit's own history, shrunk toward its base rate, and then 1,500
+futures are rolled forward honouring the real schedule.
+
+It reports the chance the current run survives the month, the odds and typical
+arrival of the next milestone, and expected completions over the quarter. Two
+deliberate refusals: a milestone a perfect run could not reach inside the horizon
+is **not offered at all** rather than shown at 0%, and when fewer than half the
+futures arrive, **no median is claimed** — reporting the median of only the runs
+that worked answers a much rosier question than the one being asked.
+
+**3. Turning points** — the dates a habit changed level.
+
+Binary segmentation over the due days, treating each as a Bernoulli trial. For
+every candidate split, "one rate throughout" is compared against "one rate before,
+another after" by likelihood ratio; the best split survives only if it clears a
+threshold that **rises with the number of positions searched**, because keeping
+the best of many noisy statistics is the classic way to find change points in
+pure noise. A minimum segment of 12 due days stops a bad fortnight counting as a
+new level, and a minimum swing of 20 points stops a real-but-trivial shift being
+reported at all.
+
+Most habits have no turning points, and returning nothing for them is the feature
+working. A rolling average would always move, and a person reading one will
+always find a story in it.
+
+**4. Daily load** — what you finish, by how much you take on.
+
+Everything else in the app is about one habit. This is about the list, and the
+failure it detects is invisible from inside any single habit: adding the eighth
+habit does not make the eighth habit fail, it makes two of the other seven fail,
+and each of those looks like an unrelated problem with its own explanation.
+
+Days are grouped by how many habits were due and each group reports the mean
+completed. Rising and still rising means headroom; flattening means the extra
+habits are being carried for nothing; falling means they are displacing
+completions that would otherwise have happened. Two caveats are printed on the
+card rather than buried: this is observational, and a count of habits is not a
+measure of effort.
+
+**5. Experiments** — the only prospective thing in the app.
+
+Every other analysis here is retrospective — it searches history for what stands
+out, which is exactly the procedure that turns noise into findings if nobody is
+careful. Discoveries applies corrections for this. An experiment sidesteps it
+instead: the hypothesis, the window and the length are all fixed *before* any
+evidence exists, so there is no search to correct for.
+
+That is why **the window cannot be moved once a trial starts**. An experiment you
+can stop when it looks good is not an experiment, it is a way of generating
+flattering numbers, so ending one early marks it abandoned and it is never
+scored. Abandoned runs stay in the log for the same reason: if the failures
+disappeared, the survivors would be a filtered sample.
+
+The comparison is a two-proportion test on due days, and the card leads with the
+**interval**, not the p-value. *"Somewhere between −4 and +31 points"* is far
+harder to misread than *"p = 0.09"*, and it answers the question people actually
+have — how big is this, and how sure are we.
 
 ## Project layout
 
@@ -293,15 +398,23 @@ lib/
     schedule_coach.dart     schedule changes the history argues for
     goal_coach.dart         tracker targets retuned to what is being hit
     briefing.dart           all of the above, ordered into a paragraph
+    lab/                    the slow questions: months, not today
+      automaticity.dart     how ingrained a habit is, and what holds it back
+      projection.dart       Markov chain + Monte Carlo, for streaks ahead
+      turning_point.dart    change-point detection over the due days
+      capacity.dart         what gets finished, by how much is taken on
+      experiment.dart       a pre-registered trial and its two-proportion test
+      experiment_data.dart  the experiment log's own versioned codec
     trackers/               one file per tracker: entry type + its metrics
       tracker_data.dart     the whole tracker snapshot, and its codec
       tracker_goals.dart    every target, plus duration/clock formatting
       tracker_kind.dart     which trackers exist, and how each presents itself
   screens/                  home, insights, detail, settings, archive,
-                            onboarding, weekly review, coach
+                            onboarding, weekly review, coach, lab, experiments
     trackers/               the hub, the six tracker screens, and targets
   services/                 notifications, backup encode/decode
-  state/                    HabitStore, SettingsStore, TrackerStore
+  state/                    HabitStore, SettingsStore, TrackerStore,
+                            ExperimentStore
                             (ChangeNotifier + scopes)
   theme/app_theme.dart      Material 3 theme from a seed colour
   util/haptics.dart         feedback that respects the user's setting

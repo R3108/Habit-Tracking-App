@@ -17,6 +17,7 @@ import '../widgets/stat_tile.dart';
 import '../widgets/weekday_chart.dart';
 import 'coach_screen.dart';
 import 'habit_detail_screen.dart';
+import 'lab_screen.dart';
 import 'weekly_review_screen.dart';
 
 /// Cross-habit statistics: the "am I actually doing this?" screen.
@@ -73,6 +74,15 @@ class InsightsScreen extends StatelessWidget {
                   subtitle: "Today's odds, and where the plan is wrong",
                   onOpen: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(builder: (_) => const CoachScreen()),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _Banner(
+                  icon: Icons.science_outlined,
+                  title: 'Lab',
+                  subtitle: 'Strength, projections and experiments',
+                  onOpen: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const LabScreen()),
                   ),
                 ),
                 const SizedBox(height: 16),

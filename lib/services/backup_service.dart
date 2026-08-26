@@ -3,6 +3,8 @@ import 'dart:convert';
 import '../data/app_repository.dart';
 import '../models/app_settings.dart';
 import '../models/habit.dart';
+import '../models/lab/experiment.dart';
+import '../models/lab/experiment_data.dart';
 import '../models/trackers/tracker_data.dart';
 
 /// Raised when a pasted backup isn't something this app wrote.
@@ -24,6 +26,7 @@ typedef BackupContents = ({
   List<Habit> habits,
   AppSettings? settings,
   TrackerData? trackers,
+  List<Experiment>? experiments,
 });
 
 /// Reads and writes the plain-text backup users move between devices.
@@ -41,6 +44,7 @@ abstract final class BackupService {
     required List<Habit> habits,
     required AppSettings settings,
     TrackerData? trackers,
+    List<Experiment>? experiments,
   }) {
     return const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
       'format': _magic,
@@ -54,6 +58,13 @@ abstract final class BackupService {
         'trackers': <String, dynamic>{
           'version': kTrackerSchemaVersion,
           'data': trackers.toJson(),
+        },
+      // Same reasoning as the trackers: its own version, so the experiment log
+      // can change shape without disturbing the habit schema around it.
+      if (experiments != null && experiments.isNotEmpty)
+        'experiments': <String, dynamic>{
+          'version': kExperimentSchemaVersion,
+          'data': experiments.map((e) => e.toJson()).toList(),
         },
     });
   }
@@ -146,6 +157,30 @@ abstract final class BackupService {
       }
     }
 
-    return (habits: habits, settings: settings, trackers: trackers);
+    List<Experiment>? experiments;
+    if (decoded['experiments'] case final Map<dynamic, dynamic> raw) {
+      final version = (raw['version'] as num?)?.toInt() ?? 0;
+      // Skipped rather than fatal for a newer section, exactly as above.
+      if (version <= kExperimentSchemaVersion && raw['data'] is List) {
+        final parsed = <Experiment>[];
+        for (final item in raw['data'] as List) {
+          if (item is! Map) continue;
+          try {
+            parsed.add(Experiment.fromJson(Map<String, dynamic>.from(item)));
+          } on Object {
+            // One unreadable run shouldn't cost the user the others.
+            continue;
+          }
+        }
+        experiments = parsed;
+      }
+    }
+
+    return (
+      habits: habits,
+      settings: settings,
+      trackers: trackers,
+      experiments: experiments,
+    );
   }
 }

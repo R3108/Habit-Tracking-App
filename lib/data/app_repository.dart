@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_settings.dart';
 import '../models/habit.dart';
+import '../models/lab/experiment.dart';
+import '../models/lab/experiment_data.dart';
 import '../models/trackers/tracker_data.dart';
 
 /// Current on-disk schema version.
@@ -40,6 +42,12 @@ abstract class AppRepository {
   Future<TrackerData?> loadTrackers();
 
   Future<void> saveTrackers(TrackerData trackers);
+
+  /// Returns null when no experiment has ever been recorded, which lets the lab
+  /// tell a fresh install from someone who ended all of theirs.
+  Future<List<Experiment>?> loadExperiments();
+
+  Future<void> saveExperiments(List<Experiment> experiments);
 
   Future<void> clear();
 }
@@ -92,6 +100,7 @@ class SharedPreferencesAppRepository implements AppRepository {
   static const _habitsKey = 'habitflow.habits';
   static const _settingsKey = 'habitflow.settings';
   static const _trackersKey = 'habitflow.trackers';
+  static const _experimentsKey = 'habitflow.experiments';
 
   /// Injected in tests; resolved lazily on the first read otherwise.
   SharedPreferences? preferences;
@@ -145,22 +154,41 @@ class SharedPreferencesAppRepository implements AppRepository {
   }
 
   @override
+  Future<List<Experiment>?> loadExperiments() async {
+    final prefs = await _prefs;
+    return decodeExperiments(prefs.getString(_experimentsKey));
+  }
+
+  @override
+  Future<void> saveExperiments(List<Experiment> experiments) async {
+    final prefs = await _prefs;
+    await prefs.setString(_experimentsKey, encodeExperiments(experiments));
+  }
+
+  @override
   Future<void> clear() async {
     final prefs = await _prefs;
     await prefs.remove(_habitsKey);
     await prefs.remove(_settingsKey);
     await prefs.remove(_trackersKey);
+    await prefs.remove(_experimentsKey);
   }
 }
 
 /// Volatile repository for tests, widget previews and the demo seed.
 class InMemoryAppRepository implements AppRepository {
-  InMemoryAppRepository({this.habits, this.settings, this.trackers});
+  InMemoryAppRepository({
+    this.habits,
+    this.settings,
+    this.trackers,
+    this.experiments,
+  });
 
   /// Public so a test can assert on what the store wrote.
   List<Habit>? habits;
   AppSettings? settings;
   TrackerData? trackers;
+  List<Experiment>? experiments;
 
   @override
   Future<List<Habit>?> loadHabits() async => habits;
@@ -181,9 +209,17 @@ class InMemoryAppRepository implements AppRepository {
   Future<void> saveTrackers(TrackerData value) async => trackers = value;
 
   @override
+  Future<List<Experiment>?> loadExperiments() async => experiments;
+
+  @override
+  Future<void> saveExperiments(List<Experiment> value) async =>
+      experiments = value;
+
+  @override
   Future<void> clear() async {
     habits = null;
     settings = null;
     trackers = null;
+    experiments = null;
   }
 }
