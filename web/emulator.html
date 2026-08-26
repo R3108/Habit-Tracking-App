@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HabitFlow — Device Emulator</title>
+<style>
+  :root{
+    --bg:#0e1013; --panel:#16191e; --panel-2:#1d2128; --line:#2a2f38;
+    --txt:#e6e9ef; --dim:#98a1b0; --accent:#6ea8fe; --accent-2:#3d7dfa;
+    --bezel:#0a0b0d; --ok:#4ade80;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"Cascadia Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ---------- top bar ---------- */
+  .bar{
+    display:flex;align-items:center;gap:14px;padding:0 14px;height:52px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;
+  }
+  .brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:14px;letter-spacing:.2px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .brand small{color:var(--dim);font-weight:450}
+  .spacer{flex:1}
+  .ctl{display:flex;align-items:center;gap:7px}
+  label.lbl{color:var(--dim);font-size:11.5px;text-transform:uppercase;letter-spacing:.6px}
+  select,button{
+    font-family:inherit;font-size:13px;color:var(--txt);background:var(--panel-2);
+    border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;
+    transition:border-color .12s,background .12s;
+  }
+  select:hover,button:hover{border-color:#3d4552;background:#232832}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--accent-2);border-color:var(--accent-2);color:#fff;font-weight:600}
+  button.primary:hover{background:#2f6ef0}
+  .zoom{width:110px}
+  input[type=range]{accent-color:var(--accent);width:110px}
+
+  /* ---------- stage ---------- */
+  .stage{
+    flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;
+    background:
+      radial-gradient(1100px 620px at 50% 38%,#1b2029 0%,transparent 70%),
+      repeating-linear-gradient(0deg,transparent 0 39px,rgba(255,255,255,.018) 39px 40px),
+      repeating-linear-gradient(90deg,transparent 0 39px,rgba(255,255,255,.018) 39px 40px);
+  }
+  .frame-wrap{transform-origin:center center;transition:transform .18s ease}
+
+  /* ---------- device ---------- */
+  .device{
+    position:relative;background:var(--bezel);border-radius:42px;padding:12px;
+    box-shadow:0 0 0 2px #23262c,0 0 0 3.5px #34383f,0 34px 70px -12px rgba(0,0,0,.85),
+               0 0 90px -20px rgba(110,168,254,.22);
+  }
+  .screen{
+    position:relative;overflow:hidden;border-radius:31px;background:#000;
+    display:flex;flex-direction:column;
+  }
+  /* status bar */
+  .statusbar{
+    height:28px;flex:0 0 28px;background:#0f1216;color:#dfe4ec;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 16px;font-size:11.5px;font-weight:600;letter-spacing:.3px;z-index:2;
+  }
+  .sb-right{display:flex;align-items:center;gap:6px}
+  .sb-right svg{display:block;opacity:.9}
+  .punch{
+    position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    width:11px;height:11px;border-radius:50%;background:#000;
+    box-shadow:inset 0 0 0 1.5px #1b1e24;z-index:3;
+  }
+  /* app viewport */
+  .viewport{flex:1;position:relative;background:#fff}
+  iframe{width:100%;height:100%;border:0;display:block;background:#fff}
+  /* nav bar */
+  .navbar{
+    height:44px;flex:0 0 44px;background:#0f1216;display:flex;align-items:center;
+    justify-content:space-around;z-index:2;
+  }
+  .navbtn{
+    background:none;border:0;padding:9px 24px;border-radius:9px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .navbtn:hover{background:rgba(255,255,255,.09)}
+  .navbtn svg{fill:none;stroke:#cfd6e2;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  /* physical buttons */
+  .side{position:absolute;right:-3px;background:#1b1e24;border-radius:0 3px 3px 0;width:3px}
+  .side.power{top:150px;height:64px}
+  .side.vol{top:88px;height:44px}
+  /* screen-off overlay */
+  .off{
+    position:absolute;inset:0;background:#000;z-index:5;opacity:0;pointer-events:none;
+    transition:opacity .25s;display:flex;align-items:center;justify-content:center;
+    color:#3a4150;font-size:12px;letter-spacing:1.4px;
+  }
+  .device.asleep .off{opacity:1;pointer-events:auto}
+
+  /* ---------- footer ---------- */
+  .foot{
+    flex:0 0 auto;height:30px;background:var(--panel);border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:16px;padding:0 14px;font-size:11.5px;color:var(--dim);
+    font-family:var(--mono);
+  }
+  .foot b{color:var(--txt);font-weight:600}
+
+  /* ---------- licenses drawer ---------- */
+  .scrim{
+    position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;
+    transition:opacity .2s;z-index:40;
+  }
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{
+    position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);background:var(--panel);
+    border-left:1px solid var(--line);transform:translateX(100%);transition:transform .24s ease;
+    z-index:50;display:flex;flex-direction:column;
+  }
+  .drawer.open{transform:translateX(0)}
+  .dhead{padding:15px 16px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .dhead h2{margin:0 0 3px;font-size:15px;font-weight:650}
+  .dhead p{margin:0;color:var(--dim);font-size:12px}
+  .dsearch{
+    width:100%;margin-top:11px;padding:9px 11px;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--txt);font-family:inherit;font-size:13px;
+  }
+  .dsearch:focus{outline:none;border-color:var(--accent)}
+  .dbody{flex:1;display:flex;min-height:0}
+  .dlist{
+    width:44%;overflow-y:auto;border-right:1px solid var(--line);padding:6px 0;
+  }
+  .dlist button{
+    display:block;width:100%;text-align:left;background:none;border:0;border-radius:0;
+    padding:7px 14px;font-size:12.5px;color:var(--dim);cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .dlist button:hover{background:var(--panel-2);color:var(--txt)}
+  .dlist button.sel{background:var(--accent-2);color:#fff;font-weight:600}
+  .ddetail{flex:1;overflow-y:auto;padding:14px 16px;min-width:0}
+  .ddetail h3{margin:0 0 10px;font-size:13.5px;color:var(--accent);font-weight:650;word-break:break-word}
+  .ddetail pre{
+    margin:0;white-space:pre-wrap;word-wrap:break-word;font-family:var(--mono);
+    font-size:11px;line-height:1.55;color:#c3cad6;
+  }
+  .muted{color:var(--dim);font-size:12.5px;padding:16px;line-height:1.6}
+  .muted code{background:var(--panel-2);padding:2px 6px;border-radius:4px;font-family:var(--mono)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#333944;border-radius:6px;border:2px solid var(--panel)}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* toast */
+  .toast{
+    position:fixed;bottom:52px;left:50%;transform:translateX(-50%) translateY(14px);
+    background:#252a33;border:1px solid var(--line);color:var(--txt);font-size:12.5px;
+    padding:9px 15px;border-radius:9px;opacity:0;pointer-events:none;transition:all .2s;z-index:60;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="brand"><span class="dot"></span>HabitFlow <small>Device Emulator</small></div>
+
+  <div class="ctl">
+    <label class="lbl" for="dev">Device</label>
+    <select id="dev"></select>
+  </div>
+
+  <div class="ctl">
+    <button id="rotate" title="Rotate device">⟳ Rotate</button>
+    <button id="power" title="Toggle screen">⏻ Screen</button>
+    <button id="reload" title="Reload app">↻ Reload</button>
+  </div>
+
+  <div class="ctl">
+    <label class="lbl" for="zoom">Zoom</label>
+    <input type="range" id="zoom" class="zoom" min="30" max="130" value="100">
+    <span id="zoomval" style="font-size:12px;color:var(--dim);width:38px;font-family:var(--mono)">100%</span>
+  </div>
+
+  <div class="spacer"></div>
+  <button class="primary" id="openLic">Third-party licenses</button>
+</div>
+
+<div class="stage" id="stage">
+  <div class="frame-wrap" id="wrap">
+    <div class="device" id="device">
+      <div class="side vol"></div>
+      <div class="side power"></div>
+      <div class="punch"></div>
+      <div class="screen" id="screen">
+        <div class="statusbar">
+          <span id="clock">9:41</span>
+          <span class="sb-right">
+            <svg width="15" height="11" viewBox="0 0 15 11"><path d="M7.5 9.2 .8 3.1a9.6 9.6 0 0 1 13.4 0Z" fill="#dfe4ec"/></svg>
+            <svg width="13" height="11" viewBox="0 0 13 11"><rect x="0" y="7" width="2.4" height="4" rx=".6" fill="#dfe4ec"/><rect x="3.5" y="5" width="2.4" height="6" rx=".6" fill="#dfe4ec"/><rect x="7" y="2.6" width="2.4" height="8.4" rx=".6" fill="#dfe4ec"/><rect x="10.5" y="0" width="2.4" height="11" rx=".6" fill="#dfe4ec"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11"><rect x=".6" y=".6" width="18" height="9.8" rx="2.4" fill="none" stroke="#dfe4ec" stroke-width="1.2"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.2" fill="#dfe4ec"/><rect x="20" y="3.6" width="1.6" height="3.8" rx=".8" fill="#dfe4ec"/></svg>
+          </span>
+        </div>
+
+        <div class="viewport">
+          <iframe id="app" src="/" title="HabitFlow application"></iframe>
+        </div>
+
+        <div class="navbar">
+          <button class="navbtn" id="nav-back" title="Back">
+            <svg width="17" height="17" viewBox="0 0 24 24"><path d="M15 19 8 12l7-7"/></svg>
+          </button>
+          <button class="navbtn" id="nav-home" title="Home">
+            <svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>
+          </button>
+          <button class="navbtn" id="nav-recents" title="Recents">
+            <svg width="14" height="14" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2.5"/></svg>
+          </button>
+        </div>
+
+        <div class="off">SCREEN OFF</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <span>Viewport <b id="f-size">—</b></span>
+  <span>Orientation <b id="f-orient">portrait</b></span>
+  <span>Scale <b id="f-scale">100%</b></span>
+  <span>Licenses <b id="f-lic">—</b></span>
+  <span style="margin-left:auto">served from <b id="f-origin">—</b></span>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Third-party licenses">
+  <div class="dhead">
+    <h2>Third-party licenses</h2>
+    <p id="lic-sub">Loading NOTICES…</p>
+    <input class="dsearch" id="lic-search" placeholder="Filter packages…" autocomplete="off">
+  </div>
+  <div class="dbody">
+    <div class="dlist" id="lic-list"></div>
+    <div class="ddetail" id="lic-detail">
+      <div class="muted">Select a package to read its license.</div>
+    </div>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- devices (logical dp, as Flutter lays out in CSS px) ---------- */
+  var DEVICES = [
+    {id:"pixel6",  name:"Pixel 6",       w:412, h:915},
+    {id:"pixel5",  name:"Pixel 5",       w:393, h:851},
+    {id:"compact", name:"Compact phone", w:360, h:800},
+    {id:"pixelxl", name:"Pixel 7 Pro",   w:412, h:960},
+    {id:"tablet",  name:"Pixel Tablet",  w:800, h:1280}
+  ];
+  var STATUS_H = 28, NAV_H = 44;
+
+  var $ = function(id){ return document.getElementById(id); };
+  var device = DEVICES[0], landscape = false, manualZoom = null;
+
+  /* ---------- device select ---------- */
+  var sel = $("dev");
+  DEVICES.forEach(function(d){
+    var o = document.createElement("option");
+    o.value = d.id; o.textContent = d.name + "  " + d.w + "×" + d.h;
+    sel.appendChild(o);
+  });
+  sel.addEventListener("change", function(){
+    device = DEVICES.filter(function(d){ return d.id === sel.value; })[0];
+    layout();
+  });
+
+  /* ---------- layout ---------- */
+  function layout(){
+    var w = landscape ? device.h : device.w;
+    var h = landscape ? device.w : device.h;
+
+    var screen = $("screen");
+    screen.style.width  = w + "px";
+    screen.style.height = h + "px";
+
+    $("f-size").textContent   = w + " × " + (h - STATUS_H - NAV_H) + " dp";
+    $("f-orient").textContent = landscape ? "landscape" : "portrait";
+
+    fit();
+  }
+
+  function fit(){
+    var stage = $("stage"), wrap = $("wrap"), dev = $("device");
+    var pad = 48;
+    var availW = stage.clientWidth  - pad;
+    var availH = stage.clientHeight - pad;
+    var natW = dev.offsetWidth, natH = dev.offsetHeight;
+    if(!natW || !natH) return;
+
+    var auto = Math.min(availW / natW, availH / natH, 1);
+    var scale = manualZoom !== null ? manualZoom : auto;
+
+    wrap.style.transform = "scale(" + scale + ")";
+    var pct = Math.round(scale * 100);
+    $("f-scale").textContent = pct + "%";
+    if(manualZoom === null){
+      $("zoom").value = Math.max(30, Math.min(130, pct));
+      $("zoomval").textContent = pct + "%";
+    }
+  }
+
+  window.addEventListener("resize", fit);
+
+  /* ---------- controls ---------- */
+  $("rotate").addEventListener("click", function(){
+    landscape = !landscape;
+    manualZoom = null;
+    layout();
+  });
+
+  $("zoom").addEventListener("input", function(){
+    manualZoom = parseInt(this.value, 10) / 100;
+    $("zoomval").textContent = this.value + "%";
+    fit();
+  });
+
+  $("power").addEventListener("click", function(){
+    $("device").classList.toggle("asleep");
+  });
+
+  $("reload").addEventListener("click", function(){
+    $("app").src = "/";
+    toast("Reloaded app");
+  });
+
+  /* ---------- android nav ---------- */
+  $("nav-back").addEventListener("click", function(){
+    try{
+      $("app").contentWindow.history.back();
+    }catch(e){
+      toast("Back unavailable: " + e.message);
+    }
+  });
+  $("nav-home").addEventListener("click", function(){
+    $("app").src = "/";
+  });
+  $("nav-recents").addEventListener("click", function(){
+    toast("Recents is not emulated — this is a browser frame, not Android.");
+  });
+
+  /* ---------- status bar clock ---------- */
+  function tick(){
+    var d = new Date();
+    var h = d.getHours(), m = d.getMinutes();
+    var ampm = h >= 12 ? "" : "";
+    h = h % 12; if(h === 0) h = 12;
+    $("clock").textContent = h + ":" + (m < 10 ? "0" + m : m) + ampm;
+  }
+  tick(); setInterval(tick, 10000);
+
+  /* ---------- toast ---------- */
+  var toastTimer = null;
+  function toast(msg){
+    var t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2600);
+  }
+
+  /* ---------- third-party licenses ---------- */
+  var entries = [], items = [], selectedIdx = -1;
+
+  function openDrawer(open){
+    $("drawer").classList.toggle("open", open);
+    $("scrim").classList.toggle("open", open);
+  }
+  $("openLic").addEventListener("click", function(){ openDrawer(true); loadLicenses(); });
+  $("scrim").addEventListener("click", function(){ openDrawer(false); });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape") openDrawer(false);
+  });
+
+  var loaded = false;
+  function loadLicenses(){
+    if(loaded) return;
+    loaded = true;
+
+    fetch("assets/NOTICES").then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    }).then(function(raw){
+      // Flutter separates entries with a line of exactly 80 dashes.
+      var chunks = raw.split(/\r?\n-{80}\r?\n/);
+
+      chunks.forEach(function(chunk){
+        var lines = chunk.replace(/^\r?\n+/, "").split(/\r?\n/);
+        var names = [], i = 0;
+        while(i < lines.length && lines[i].trim() !== ""){
+          names.push(lines[i].trim());
+          i++;
+        }
+        var body = lines.slice(i).join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
+        if(!names.length) return;
+        var idx = entries.length;
+        entries.push({names:names, body:body});
+        names.forEach(function(n){ items.push({name:n, entry:idx}); });
+      });
+
+      items.sort(function(a, b){
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+      });
+
+      $("lic-sub").textContent =
+        items.length + " packages · " + entries.length + " license texts";
+      $("f-lic").textContent = items.length + " pkgs";
+      renderList("");
+    }).catch(function(err){
+      $("lic-sub").textContent = "Could not load NOTICES";
+      $("lic-list").innerHTML = "";
+      $("lic-detail").innerHTML =
+        '<div class="muted"><b>' + esc(err.message) + '</b><br><br>' +
+        'This page must be served over HTTP from the Flutter web build ' +
+        '(so that <code>assets/NOTICES</code> resolves).<br><br>Run:<br>' +
+        '<code>python -m http.server 8080 --directory build/web</code><br><br>' +
+        'then open <code>http://localhost:8080/emulator.html</code>.</div>';
+    });
+  }
+
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
+    });
+  }
+
+  function renderList(filter){
+    var list = $("lic-list");
+    list.innerHTML = "";
+    var f = filter.trim().toLowerCase();
+    var shown = 0, frag = document.createDocumentFragment();
+
+    items.forEach(function(it, i){
+      if(f && it.name.toLowerCase().indexOf(f) === -1) return;
+      shown++;
+      var b = document.createElement("button");
+      b.textContent = it.name;
+      b.title = it.name;
+      if(i === selectedIdx) b.className = "sel";
+      b.addEventListener("click", function(){
+        selectedIdx = i;
+        showEntry(it);
+        renderList($("lic-search").value);
+      });
+      frag.appendChild(b);
+    });
+
+    list.appendChild(frag);
+    if(shown === 0){
+      list.innerHTML = '<div class="muted">No package matches.</div>';
+    }
+  }
+
+  function showEntry(it){
+    var e = entries[it.entry];
+    var shared = e.names.length > 1
+      ? '<div style="color:var(--dim);font-size:11.5px;margin:-4px 0 10px">' +
+        'This license text covers ' + e.names.length + ' packages.</div>'
+      : "";
+    $("lic-detail").innerHTML =
+      "<h3>" + esc(it.name) + "</h3>" + shared +
+      "<pre>" + esc(e.body) + "</pre>";
+    $("lic-detail").scrollTop = 0;
+  }
+
+  $("lic-search").addEventListener("input", function(){
+    renderList(this.value);
+  });
+
+  /* ---------- boot ---------- */
+  $("f-origin").textContent = location.origin;
+  layout();
+  if(location.protocol === "file:"){
+    toast("Open this over http:// — file:// cannot load the app.");
+  }
+})();
+</script>
+</body>
+</html>
